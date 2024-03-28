@@ -30,7 +30,7 @@ class Piece:
     def index_to_square(number):
         if not 0 <= number <= 63:
             raise Piece.MoveException(f'{number} a valid index.')
-        return f"{chr(ord('h') - (number % 8))}{8 - (number // 8)}"
+        return f"{chr(ord('a') + (number % 8))}{8 - (number // 8)}"
 
     def anticolor(self):
         if self.color == "black":
@@ -103,7 +103,6 @@ class Pawn(Piece):
         move_distance = self.get_move_distance(self.location, location)
 
         if self.color == "white":
-            # For white pawns
             if move_distance[0] == 0:
                 if move_distance[1] == 1:  # Move one square forward
                     return True
@@ -111,11 +110,10 @@ class Pawn(Piece):
                     return True
 
         elif self.color == "black":
-            # For black pawns
             if move_distance[0] == 0:
-                if move_distance[1] == -1:  # Move one square forward
+                if move_distance[1] == -1:
                     return True
-                if move_distance[1] == -2 and self.starting_position:  # Move two squares from starting position
+                if move_distance[1] == -2 and self.starting_position:
                     return True
 
         return False
@@ -205,7 +203,6 @@ class King(Piece):
 
     def can_move_to(self, location):
         move_distance = self.get_move_distance(self.location, location)
-        # Check if the King moves only one square in any direction
         if abs(move_distance[0]) <= 1 and abs(move_distance[1]) <= 1:
             return True
         return False

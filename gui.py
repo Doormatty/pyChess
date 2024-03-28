@@ -3,22 +3,29 @@ from kivy.graphics import Rectangle, Color
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
-
+from kivy.logger import Logger
+from board import Board
 from pieces import Pawn, Knight, Bishop, Rook, Queen, King, Piece
 
 
 class ChessSquare(Button):
 
-    def __init__(self, index, board, color, **kwargs):
+    def __init__(self, name: str, board_widget: 'ChessBoard', color, **kwargs):
+        self.name = name
+        self.board_widget = board_widget
         super().__init__(background_color=color, background_normal='', background_down='', halign='center', valign='center', font_name='DejaVuSans-Bold.ttf', **kwargs)
-        self.index = index
-        self.board = board
         self.bind(size=lambda instance, value: setattr(instance, 'text_size', value))
         self.bind(size=self.adjust_font_size)
         self.piece = None
 
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f"ChessSquare(name={self.name}, board_widget={self.board_widget})"
+
     @staticmethod
-    def adjust_font_size(button, new_size):
+    def adjust_font_size(button: Button, new_size: tuple):
         max_font_size = min(new_size[0], new_size[1])
         button.font_size = max_font_size * 1.2
 
@@ -31,71 +38,90 @@ class ChessSquare(Button):
         self.piece = None
         self.text = ''
 
-    def reset_background_color(self):
-        self.background_color = self.board.white_square_color if (self.index // 8 + self.index) % 2 == 0 else self.board.black_square_color
-
     @staticmethod
-    def index_to_square(number):
-        if not 0 <= number <= 63:
-            return "Invalid number"
-        file = chr(ord('a') + (number % 8))  # Horizontal (columns 'a' to 'h')
-        rank = 1 + (number // 8)  # Vertical (rows 1 to 8 from bottom to top)
-        return f"{file}{rank}"
+    def square_to_index(square: str) -> int:
+        try:
+            col = ord('h') - ord(square[0])
+        except TypeError:
+            return -1  # Return an invalid index
+        row = int(square[1]) - 1  # Rows are numbered from 1 to 8, starting from the top
+        return row * 8 + col
 
-    @staticmethod
-    def square_to_index(square):
-        if len(square) != 2 or square[0] < 'a' or square[0] > 'h' or square[1] < '1' or square[1] > '8':
-            raise ValueError("Invalid square")
-        file = ord(square[0]) - ord('a')  # Horizontal
-        rank = int(square[1]) - 1  # Vertical
-        return rank * 8 + file
-
-    def on_press(self):
-        print(f"Square {self.index} {self.index_to_square(self.index)} pressed")
-        self.board.reset_square_colors()
+    def on_press(self) -> None:
+        Logger.info(f"ChessSquare: Square {self.name} pressed")
+        if self.piece is not None:
+            Logger.info(f"ChessSquare: Piece {self.piece.location}")
+        self.board_widget.reset_square_colors()
 
         if self.piece is not None:
+            self.parent.app.selected_piece = self.piece
+            Logger.info(f"ChessSquare: self.piece.location: {self.piece.location}")
             possible_moves = self.piece.get_all_possible_moves()
             for move in possible_moves:
-                self.board[self.square_to_index(move)].background_color = [1, 0, 0, 1]
+                index = self.square_to_index(move)
+                self.board_widget[index].background_color = [1, 0, 0, 1]
+        elif self.parent.app.selected_piece is not None:
+            if self.parent.app.selected_piece == self.piece:
+                self.parent.app.selected_piece = None
+            else:
+                Logger.info(f"ChessSquare: Selected Piece {self.parent.app.selected_piece.location}")
+                Logger.info(f"ChessSquare: Trying to move to {self.name}")
+                self.parent.app.board.move(self.parent.app.selected_piece.location, self.name)
+                self.parent.app.selected_piece = None
+                self.parent.app.load_state_from(self.parent.app.board)
 
 
 class ChessBoard(GridLayout):
     def __init__(self, app, background_color=None, white_square_color=None, black_square_color=None, white_piece_color=None, black_piece_color=None, **kwargs):
-        self.white_piece_color = [1, 1, 1, 1] if white_piece_color is None else white_piece_color
-        self.black_piece_color = [0, 0, 0, 1] if black_piece_color is None else black_piece_color
         super().__init__(cols=8, rows=8, size_hint_x=1 / 3, padding=[0, 100, 0, 100], **kwargs)
         self.app = app
         self.squares = None
         self.rect_squares = None
+        self.white_piece_color = [1, 1, 1, 1] if white_piece_color is None else white_piece_color
+        self.black_piece_color = [0, 0, 0, 1] if black_piece_color is None else black_piece_color
         self.background_color = [0.3, 0.3, 0.3, 1] if background_color is None else background_color
         self.white_square_color = [0.6, 0.6, 0.6, 1] if white_square_color is None else white_square_color
         self.black_square_color = [0.02, 0.20, 0.20, 1] if black_square_color is None else black_square_color
-        for i in range(64):
-            self.add_widget(ChessSquare(index=i, board=self, color=self.white_square_color if (i // 8 + i) % 2 == 0 else self.black_square_color))
 
-    def __getitem__(self, item):
-        if isinstance(item, str):
-            try:
-                item = int(item)
-            except ValueError:
-                item = ChessSquare.square_to_index(item)
-        return self.children[item]
+        # Grid is filled left to right then top to bottom
 
-    def add(self, index, piece):
+        for number in range(8, 0, -1):
+            for letter in "abcdefgh":
+                self.add_widget(ChessSquare(name=f"{letter}{number}", board_widget=self, color=self.get_square_color(f"{letter}{number}")))
+
+    def __getitem__(self, item: str) -> ChessSquare:
+        index = ChessSquare.square_to_index(item)
+        return self.children[index]
+
+    def add(self, index: str | int, piece: King | Queen | Knight | Bishop | Rook | Pawn):
         self[index].add(piece)
 
+    def get_square_color(self, square):
+        number = int(square[1])
+        letter = square[0]
+        row = 8 - number  # Convert the number to a row index (0 to 7)
+        col = ord(letter) - ord('a')  # Convert the letter to a column index (0 to 7)
+        is_dark_square = (row + col) % 2 == 0
+        return self.black_square_color if is_dark_square else self.white_square_color
+
     def reset_square_colors(self):
-        for i in range(64):
-            self[i].background_color = self.white_square_color if (i // 8 + i) % 2 == 0 else self.black_square_color
+        for letter in "abcdefgh":
+            for number in range(1, 9):
+                row = 8 - number  # Convert the number to a row index (0 to 7)
+                col = ord(letter) - ord('a')  # Convert the letter to a column index (0 to 7)
+                is_dark_square = (row + col) % 2 == 0
+                color = self.black_square_color if is_dark_square else self.white_square_color
+                self[f"{letter}{number}"].background_color = color
 
 
 class ChessGui(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.left_layout = None
-        self.right_layout = None
-        self.board = None
+        self.board = Board()
+        self.background_color = [0.3, 0.3, 0.3, 1]
+        self.left_layout = BoxLayout(orientation='vertical', size_hint_x=1 / 3)
+        self.right_layout = BoxLayout(orientation='vertical', size_hint_x=1 / 3)
+        self.board_widget = ChessBoard(self, background_color=self.background_color)
         self.rect_left = None
         self.rect_right = None
         self.rect_squares = None
@@ -104,37 +130,33 @@ class ChessGui(App):
         self.turn_counter = 0
         self.halfturn_counter = 0
         self.selected_square = None
+        self.selected_piece = None
 
     def build(self):
         master_layout = BoxLayout(orientation='horizontal')
-
-        self.left_layout = BoxLayout(orientation='vertical', size_hint_x=1 / 3)
         with self.left_layout.canvas.before:
             Color(*self.background_color)
             self.rect_left = Rectangle(size=self.left_layout.size, pos=self.left_layout.pos)
 
-        self.right_layout = BoxLayout(orientation='vertical', size_hint_x=1 / 3)
         with self.right_layout.canvas.before:
             Color(*self.background_color)
             self.rect_right = Rectangle(size=self.right_layout.size, pos=self.right_layout.pos)
 
-        self.board = ChessBoard(self, background_color=self.background_color)
-        with self.board.canvas.before:
+        with self.board_widget.canvas.before:
             Color(*self.background_color)
-            self.rect_squares = Rectangle(size=self.board.size, pos=self.board.pos)
+            self.rect_squares = Rectangle(size=self.board_widget.size, pos=self.board_widget.pos)
 
         # Add binding to update rectangle size and position when layouts change
         self.left_layout.bind(pos=self.update_rect, size=self.update_rect)
         self.right_layout.bind(pos=self.update_rect, size=self.update_rect)
-        self.board.bind(pos=self.update_rect, size=self.update_rect)
+        self.board_widget.bind(pos=self.update_rect, size=self.update_rect)
 
         # Add widgets to master_layout
         master_layout.add_widget(self.left_layout)
-        master_layout.add_widget(self.board)
+        master_layout.add_widget(self.board_widget)
         master_layout.add_widget(self.right_layout)
 
-        self.board.bind(size=self.adjust_square_sizes)
-        self.load_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1")
+        self.board_widget.bind(size=self.adjust_square_sizes)
         return master_layout
 
     def adjust_square_sizes(self, instance, *args):
@@ -143,7 +165,7 @@ class ChessGui(App):
         square_size = min(instance.width / 8, instance.height / 8)
 
         # Update the size of each square
-        for square in self.board.children:
+        for square in self.board_widget.children:
             square.size_hint = (None, None)
             square.size = (square_size, square_size)
             square.text_size = (square_size, square_size)
@@ -155,39 +177,32 @@ class ChessGui(App):
         elif instance == self.right_layout:
             self.rect_right.pos = instance.pos
             self.rect_right.size = instance.size
-        elif instance == self.board:
+        elif instance == self.board_widget:
             self.rect_squares.pos = instance.pos
             self.rect_squares.size = instance.size
 
-    def load_fen(self, layout):
-        def get_color(piece):
-            if piece.isupper():
-                return 'white'
+    def load_state_from(self, board: Board):
+        for square_name in Board.iter_square_names():
+            piece = board[square_name]
+            if piece is not None:
+                Logger.debug(f"ChessGui: adding {piece} {piece.location} to {square_name}")
+                self.board_widget[square_name].add(piece)
+                assert piece == self.board_widget[square_name].piece
             else:
-                return 'black'
+                self.board_widget[square_name].clear()
 
-        piece_dict = {"r": Rook, "k": King, "b": Bishop, "n": Knight, "p": Pawn, "q": Queen}
-        board_layout = layout.split(' ')[0]
-        current_player = layout.split(' ')[1]
-        castles = layout.split(' ')[2]
-        enpassant = layout.split(' ')[3]
-        self.halfturn_counter = int(layout.split(' ')[4])
-        self.turn_counter = int(layout.split(' ')[5])
-        self.current_player = "white" if current_player.lower() == "w" else "black"
-        expanded_layout = ""
-        for char in board_layout:
-            if char.isdigit():
-                expanded_layout += ' ' * int(char)
-            elif char == "/":
-                continue
+    def save_state_to(self, board: Board):
+        for square_name in Board.iter_square_names():
+            piece = self.board_widget[square_name].piece
+            if piece is not None:
+                board[square_name] = piece
             else:
-                expanded_layout += char
-        for index, piece in enumerate(expanded_layout):
-            if piece != ' ':
-                color = get_color(piece)
-                piece_class = piece_dict[piece.lower()]
-                self.board.add(63-index, piece_class(color=color, location=index, board=self.board))
+                board[square_name] = None
 
 
 if __name__ == "__main__":
-    ChessGui().run()
+    app = ChessGui()
+    board = Board()
+    board.initialize_board()
+    app.load_state_from(board)
+    app.run()

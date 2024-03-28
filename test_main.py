@@ -1,6 +1,7 @@
 import pytest
 
 from board import Board
+from gui import ChessSquare
 from pieces import Pawn, Knight, Bishop, Rook, Queen, King
 
 
@@ -224,3 +225,13 @@ class TestChessGame:
         make_move(setup_board, 'd8', 'h4')
         # White bishop captures black pawn
         make_move(setup_board, 'c4', 'e6')
+
+    @pytest.mark.parametrize("square,expected_index", [
+        ('a1', 0),
+        ('h8', 63),
+        ('e4', 28),
+        ('c6', 42),
+    ])
+    def test_square_to_index(self, square, expected_index):
+        assert ChessSquare.square_to_index(square) == expected_index
+
