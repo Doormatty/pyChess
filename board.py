@@ -108,9 +108,10 @@ class Board:
                 yield f'{chr(ord(start[0]) + i * step_x)}{int(start[1]) + i * step_y}'
 
     def is_move_clear(self, start, destination):
-        for square in self.get_intermediate_squares(start, destination):
+        intermedes = list(self.get_intermediate_squares(start, destination))
+        for square in intermedes:
             if self[square] is not None:
-                return square
+                return False
         return True
 
     def can_castle(self):

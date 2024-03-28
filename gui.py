@@ -1,9 +1,10 @@
 from kivy.app import App
 from kivy.graphics import Rectangle, Color
+from kivy.logger import Logger
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
-from kivy.logger import Logger
+
 from board import Board
 from pieces import Pawn, Knight, Bishop, Rook, Queen, King, Piece
 
@@ -47,19 +48,30 @@ class ChessSquare(Button):
         row = int(square[1]) - 1  # Rows are numbered from 1 to 8, starting from the top
         return row * 8 + col
 
+    def draw_moves(self):
+        if self.piece is None:
+            return None
+        possible_moves = self.piece.get_all_possible_moves()
+        for move in possible_moves:
+            if self.name == move:
+                continue
+            elif self.board_widget[move].piece is not None and self.piece.can_take(move):
+                self.board_widget[move].background_color = self.board_widget.capture_background
+            elif self.piece.can_move_to(move) and self.board_widget[move].piece is None:
+                self.board_widget[move].background_color = self.board_widget.highlight_color
+        self.background_color = self.board_widget.selected_background
+
     def on_press(self) -> None:
         Logger.info(f"ChessSquare: Square {self.name} pressed")
         if self.piece is not None:
-            Logger.info(f"ChessSquare: Piece {self.piece.location}")
+            Logger.info(f"ChessSquare: Piece {self.piece.location} selected")
         self.board_widget.reset_square_colors()
 
         if self.piece is not None:
+            # If there is a piece in this square
             self.parent.app.selected_piece = self.piece
             Logger.info(f"ChessSquare: self.piece.location: {self.piece.location}")
-            possible_moves = self.piece.get_all_possible_moves()
-            for move in possible_moves:
-                index = self.square_to_index(move)
-                self.board_widget[index].background_color = [1, 0, 0, 1]
+            self.draw_moves()
         elif self.parent.app.selected_piece is not None:
             if self.parent.app.selected_piece == self.piece:
                 self.parent.app.selected_piece = None
@@ -72,19 +84,21 @@ class ChessSquare(Button):
 
 
 class ChessBoard(GridLayout):
-    def __init__(self, app, background_color=None, white_square_color=None, black_square_color=None, white_piece_color=None, black_piece_color=None, **kwargs):
+    def __init__(self, app, **kwargs):
         super().__init__(cols=8, rows=8, size_hint_x=1 / 3, padding=[0, 100, 0, 100], **kwargs)
         self.app = app
         self.squares = None
         self.rect_squares = None
-        self.white_piece_color = [1, 1, 1, 1] if white_piece_color is None else white_piece_color
-        self.black_piece_color = [0, 0, 0, 1] if black_piece_color is None else black_piece_color
-        self.background_color = [0.3, 0.3, 0.3, 1] if background_color is None else background_color
-        self.white_square_color = [0.6, 0.6, 0.6, 1] if white_square_color is None else white_square_color
-        self.black_square_color = [0.02, 0.20, 0.20, 1] if black_square_color is None else black_square_color
+        self.white_piece_color = kwargs.get("white_piece_color", [1, 1, 1, 1])
+        self.black_piece_color = kwargs.get("black_piece_color", [0, 0, 0, 1])
+        self.background_color = kwargs.get("background_color", [0.3, 0.3, 0.3, 1])
+        self.white_square_color = kwargs.get("white_square_color", [0.6, 0.6, 0.6, 1])
+        self.black_square_color = kwargs.get("black_square_color", [0.02, 0.20, 0.20, 1])
+        self.highlight_color = kwargs.get("highlight_color", [1, 0, 0, 1])
+        self.selected_background = kwargs.get("selected_background", [0, 0.67, 0.56])
+        self.capture_background = kwargs.get("capture_background", [0, 0.49, 0.67])
 
         # Grid is filled left to right then top to bottom
-
         for number in range(8, 0, -1):
             for letter in "abcdefgh":
                 self.add_widget(ChessSquare(name=f"{letter}{number}", board_widget=self, color=self.get_square_color(f"{letter}{number}")))
@@ -97,35 +111,25 @@ class ChessBoard(GridLayout):
         self[index].add(piece)
 
     def get_square_color(self, square):
-        number = int(square[1])
-        letter = square[0]
-        row = 8 - number  # Convert the number to a row index (0 to 7)
-        col = ord(letter) - ord('a')  # Convert the letter to a column index (0 to 7)
-        is_dark_square = (row + col) % 2 == 0
+        is_dark_square = ((8 - int(square[1])) + (ord(square[0]) - ord('a'))) % 2 == 0
         return self.black_square_color if is_dark_square else self.white_square_color
 
     def reset_square_colors(self):
         for letter in "abcdefgh":
             for number in range(1, 9):
-                row = 8 - number  # Convert the number to a row index (0 to 7)
-                col = ord(letter) - ord('a')  # Convert the letter to a column index (0 to 7)
-                is_dark_square = (row + col) % 2 == 0
-                color = self.black_square_color if is_dark_square else self.white_square_color
-                self[f"{letter}{number}"].background_color = color
+                self[f"{letter}{number}"].background_color = self.get_square_color(f"{letter}{number}")
 
 
 class ChessGui(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.board = Board()
-        self.background_color = [0.3, 0.3, 0.3, 1]
         self.left_layout = BoxLayout(orientation='vertical', size_hint_x=1 / 3)
         self.right_layout = BoxLayout(orientation='vertical', size_hint_x=1 / 3)
-        self.board_widget = ChessBoard(self, background_color=self.background_color)
+        self.board_widget = ChessBoard(self)
         self.rect_left = None
         self.rect_right = None
         self.rect_squares = None
-        self.background_color = [0.3, 0.3, 0.3, 1]
         self.current_player = "white"
         self.turn_counter = 0
         self.halfturn_counter = 0
@@ -135,15 +139,15 @@ class ChessGui(App):
     def build(self):
         master_layout = BoxLayout(orientation='horizontal')
         with self.left_layout.canvas.before:
-            Color(*self.background_color)
+            Color(*self.board_widget.background_color)
             self.rect_left = Rectangle(size=self.left_layout.size, pos=self.left_layout.pos)
 
         with self.right_layout.canvas.before:
-            Color(*self.background_color)
+            Color(*self.board_widget.background_color)
             self.rect_right = Rectangle(size=self.right_layout.size, pos=self.right_layout.pos)
 
         with self.board_widget.canvas.before:
-            Color(*self.background_color)
+            Color(*self.board_widget.background_color)
             self.rect_squares = Rectangle(size=self.board_widget.size, pos=self.board_widget.pos)
 
         # Add binding to update rectangle size and position when layouts change

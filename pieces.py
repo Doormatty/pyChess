@@ -42,7 +42,7 @@ class Piece:
         raise NotImplementedError
 
     def can_take(self, location):
-        return self.can_move_to(location)
+        return self.can_move_to(location) and self.board[location] is not None and self.board[location].color == self.anticolor()
 
     def get_all_possible_moves(self):
         possible_moves = []
@@ -101,22 +101,13 @@ class Pawn(Piece):
 
     def can_move_to(self, location):
         move_distance = self.get_move_distance(self.location, location)
-
-        if self.color == "white":
-            if move_distance[0] == 0:
-                if move_distance[1] == 1:  # Move one square forward
-                    return True
-                if move_distance[1] == 2 and self.starting_position:  # Move two squares from starting position
-                    return True
-
-        elif self.color == "black":
-            if move_distance[0] == 0:
-                if move_distance[1] == -1:
-                    return True
-                if move_distance[1] == -2 and self.starting_position:
-                    return True
-
-        return False
+        if move_distance[0] != 0:
+            return False
+        if not self.board.is_move_clear(self.location, location):
+            return False
+        color = 1 if self.color == "white" else -1
+        if move_distance[1] == 1 * color or (move_distance[1] == 2 * color and self.starting_position):
+            return True
 
     def can_take(self, location):
         move_distance = self.get_move_distance(self.location, location)
@@ -154,6 +145,8 @@ class Bishop(Piece):
             return "♝"
 
     def can_move_to(self, location):
+        if not self.board.is_move_clear(self.location, location):
+            return False
         move_distance = self.get_move_distance(self.location, location)
         return abs(move_distance[0]) == abs(move_distance[1])
 
@@ -170,6 +163,8 @@ class Rook(Piece):
             return "♜"
 
     def can_move_to(self, location):
+        if not self.board.is_move_clear(self.location, location):
+            return False
         move_distance = self.get_move_distance(self.location, location)
         return abs(move_distance[0]) == 0 or abs(move_distance[1]) == 0
 
@@ -186,6 +181,8 @@ class Queen(Piece):
             return "♛"
 
     def can_move_to(self, location):
+        if not self.board.is_move_clear(self.location, location):
+            return False
         move_distance = self.get_move_distance(self.location, location)
         return abs(move_distance[0]) == abs(move_distance[1]) or (abs(move_distance[0]) == 0 or abs(move_distance[1]) == 0)
 
@@ -202,6 +199,8 @@ class King(Piece):
             return "♚"
 
     def can_move_to(self, location):
+        if not self.board.is_move_clear(self.location, location):
+            return False
         move_distance = self.get_move_distance(self.location, location)
         if abs(move_distance[0]) <= 1 and abs(move_distance[1]) <= 1:
             return True
