@@ -47,7 +47,7 @@ class Piece:
     def get_all_possible_moves(self):
         possible_moves = []
         for square in self.iter_square_names():
-            if self.can_move_to(square):
+            if self.can_move_to(square) or self.can_take(square):
                 possible_moves.append(square)
         return possible_moves
 
@@ -111,10 +111,9 @@ class Pawn(Piece):
 
     def can_take(self, location):
         move_distance = self.get_move_distance(self.location, location)
-        if move_distance[0] == 1 and (move_distance[1] == 1 or (move_distance[1] == -1 and self.color == "black")):
+        if move_distance[0] == 1 and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
             return True
-        else:
-            return False
+        return False
 
 
 class Knight(Piece):

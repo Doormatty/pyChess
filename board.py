@@ -3,11 +3,20 @@ from rich.console import Console
 from pieces import Pawn, Knight, Bishop, Rook, Queen, King
 
 
+# TODO - Write function that returns a dictionary of pieces, with the values being all possible moves and captures possible by that piece.
+# TODO - Write function that takes the above mentioned dictionary, and provides scores for each possible move/capture
+# TODO - Handle Check and Checkmate
+#
+
+
 class Board:
     class MoveException(Exception):
         pass
 
     def __init__(self):
+        """
+        Initialize the chess board. Set up required variables and clear the board.
+        """
         self.console = Console()
         self.squares = {}
         self.captured = []
@@ -17,12 +26,39 @@ class Board:
         self.clear()
 
     def __getitem__(self, square):
+        """
+        Overload the [] operator to access squares on the board.
+
+        Parameters:
+        square (str): A string in chess notation representing the square. For example, 'd5'.
+
+        Returns:
+        Piece object if the square is occupied else None.
+        """
         return self.squares[square]
 
     def __setitem__(self, square, piece):
+        """
+        Overload the [] operator to place pieces on the board.
+
+        Parameters:
+        square (str): A string in chess notation representing the square. For example, 'd5'.
+        piece (Piece): The piece object to be placed on the board.
+        """
         self.squares[square] = piece
 
     def move(self, start, destination):
+        """
+        Move a piece from start square to destination square if valid.
+
+        Parameters:
+        start (str): A string in chess notation representing the start square. For example, 'd5'.
+        destination (str): A string in chess notation representing the destination square. For example, 'e7'.
+
+        Raises:
+        MoveException: If the move is not valid due to reasons like moving opponent's pieces, illegal move path,
+        casting check on own king etc.
+        """
         if self[start] is None:
             raise self.MoveException(f"Cannot move from an empty square.")
         piece = self[start]
@@ -60,32 +96,77 @@ class Board:
 
     @staticmethod
     def iter_square_names():
+        """
+        Iterate over all squares of the board from left to right and top to bottom.
+
+        Yields:
+        str: The square in chess notation, for example, 'a1', 'a2'...'h8'.
+        """
         for letter in "abcdefgh":
             for number in range(1, 9):
                 yield f'{letter}{number}'
 
     @staticmethod
     def iter_rev_square_names():
+        """
+        Iterate over all squares of the board from right to left and bottom to top.
+
+        Yields:
+        str: The square in chess notation, for example, 'h8', 'h7'...'a1'.
+        """
         for letter in "hgfedcba":
             for number in range(8, 0, -1):
                 yield f'{letter}{number}'
 
     def clear(self):
+        """
+        Clear the board.
+        """
         for square in self.iter_square_names():
             self[square] = None
 
     @staticmethod
     def get_square_color(square):
+        """
+        Check the color of the square, using the board's 8x8 grid and the chess rule of alternation.
+
+        Parameters:
+        square (str): A string in chess notation representing the square. For example, 'd5'.
+
+        Returns:
+        str: "black" if the square is black, "white" if the square is white.
+        """
         return "black" if (ord(square[0].lower()) - ord('a') + 1 + int(square[1])) % 2 == 0 else "white"
 
     @staticmethod
     def get_move_distance(source, destination):
+        """
+        Computes the vertical and horizontal distance between two squares.
+
+        Parameters:
+        source (str): The starting square in chess notation, for example, 'd5'.
+        destination (str): The ending square in chess notation, for example, 'e7'.
+
+        Returns:
+        A tuple of (horizontal_distance, vertical_distance).
+        """
         vertical = int(destination[1]) - int(source[1])
         horizontal = abs(ord(destination[0].lower()) - ord(source[0].lower()))
         return horizontal, vertical
 
     @staticmethod
     def get_intermediate_squares(start, end: str):
+        """
+        Get all squares that a piece must cross to get from start to end.
+        This does not include the end square but includes the start square.
+
+        Parameters:
+        start (str): The starting square in chess notation, for example, 'd5'.
+        end (str): The ending square in chess notation, for example, 'e7'.
+
+        Yields:
+        str: The squares in the path from start to end.
+        """
         move_distance = Board.get_move_distance(start, end)
 
         if abs(move_distance[0]) == 0:
@@ -108,6 +189,16 @@ class Board:
                 yield f'{chr(ord(start[0]) + i * step_x)}{int(start[1]) + i * step_y}'
 
     def is_move_clear(self, start, destination):
+        """
+        Check if a move from start square to destination square is clear, i.e., there are no other pieces blocking the way.
+
+        Parameters:
+        start (str): The starting square in chess notation, for example, 'd5'.
+        destination (str): The ending square in chess notation, for example, 'e7'.
+
+        Returns:
+        bool: True if path is clear, False otherwise.
+        """
         intermedes = list(self.get_intermediate_squares(start, destination))
         for square in intermedes:
             if self[square] is not None:
@@ -115,6 +206,13 @@ class Board:
         return True
 
     def can_castle(self):
+        """
+        Check if either of the kings can still legally castle.
+
+        Returns:
+        str: A string representing the castling availability. 'KQkq' means that both kings can castle to both sides.
+        '-' means no king can castle anymore.
+        """
         retval = ""
         if self['d1'] is not None and not self['d1'].has_moved:
             if self['a1'] is not None and not self['a1'].has_moved:
@@ -132,9 +230,24 @@ class Board:
 
     @staticmethod
     def _boundry_check(location):
+        """
+        Check if the denoted location is within the boundaries of the chess board.
+
+        Parameters:
+        location (str): The location to be checked, e.g. 'a1'.
+
+        Returns:
+        bool: True if the location is within the board, False otherwise.
+        """
         return location[0] in "abcdefgh" and location[1] in "12345678"
 
     def export_to_fen(self):
+        """
+        Export the current game state to FEN (Forsyth–Edwards Notation) string.
+
+        Returns:
+        str: The FEN string representing the current game state.
+        """
         fen = ""
         for number in range(8, 0, -1):
             empty_count = 0
@@ -164,6 +277,9 @@ class Board:
         return fen
 
     def initialize_board(self):
+        """
+        Initialize the board with a standard set of pieces.
+        """
         self.clear()
         self.turn_number = 1
         for square in self.iter_square_names():
@@ -211,6 +327,3 @@ class Board:
                         square_color = "bright_white"
                     self.console.print(f'{piece} ', end='', style=f"black on {square_color}")
             print('')
-
-
-

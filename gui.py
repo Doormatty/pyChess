@@ -10,47 +10,90 @@ from pieces import Pawn, Knight, Bishop, Rook, Queen, King, Piece
 
 
 class ChessSquare(Button):
+    """
+    Represents a square on the chessboard.
 
-    def __init__(self, name: str, board_widget: 'ChessBoard', color, **kwargs):
-        self.name = name
-        self.board_widget = board_widget
+    Attributes:
+        name (str): The name of the square.
+        board_widget (ChessBoard): Reference to the parent ChessBoard.
+        piece (Piece, optional): The chess piece on this square, if any.
+        color (list[float, float, float, float]): Background color of the square.
+    """
+
+    def __init__(self, name: str, board_widget: 'ChessBoard', color: list[float, float, float, float], **kwargs) -> None:
+        """
+        Initialize a ChessSquare.
+
+        Parameters:
+            name (str): The name of the square.
+            board_widget (ChessBoard): The parent chessboard widget.
+            color (list[float, float, float, float]): The background color.
+        """
+        self.name: str = name
+        self.board_widget: ChessBoard = board_widget
         super().__init__(background_color=color, background_normal='', background_down='', halign='center', valign='center', font_name='DejaVuSans-Bold.ttf', **kwargs)
         self.bind(size=lambda instance, value: setattr(instance, 'text_size', value))
         self.bind(size=self.adjust_font_size)
-        self.piece = None
+        self.piece: Piece | None = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"ChessSquare(name={self.name}, board_widget={self.board_widget})"
 
     @staticmethod
-    def adjust_font_size(button: Button, new_size: tuple):
+    def adjust_font_size(button: Button, new_size: tuple[int, int]) -> None:
+        """
+        Adjust the font size based on the button's size.
+
+        Parameters:
+            button (Button): The button to adjust.
+            new_size (tuple[int, int]): The new size of the button.
+        """
         max_font_size = min(new_size[0], new_size[1])
         button.font_size = max_font_size * 1.2
 
-    def add(self, piece: Piece):
+    def add(self, piece: Piece) -> None:
+        """
+        Add a chess piece to this square.
+
+        Parameters:
+            piece (Piece): The piece to be added.
+        """
         self.piece = piece
         self.text = str(self.piece)
         self.color = self.piece.color
 
-    def clear(self):
+    def clear(self) -> None:
+        """Clear the chess piece from this square."""
         self.piece = None
         self.text = ''
 
     @staticmethod
     def square_to_index(square: str) -> int:
+        """
+        Convert a square name to its index.
+
+        Parameters:
+            square (str): The name of the square.
+
+        Returns:
+            int: The index of the square.
+        """
         try:
             col = ord('h') - ord(square[0])
         except TypeError:
             return -1  # Return an invalid index
-        row = int(square[1]) - 1  # Rows are numbered from 1 to 8, starting from the top
+        row = int(square[1]) - 1
         return row * 8 + col
 
-    def draw_moves(self):
+    def draw_moves(self) -> None:
+        """
+        Highlight possible moves for the piece on this square.
+        """
         if self.piece is None:
-            return None
+            return
         possible_moves = self.piece.get_all_possible_moves()
         for move in possible_moves:
             if self.name == move:
@@ -62,25 +105,24 @@ class ChessSquare(Button):
         self.background_color = self.board_widget.selected_background
 
     def on_press(self) -> None:
+        """
+        Handle press events on this square.
+        """
         Logger.info(f"ChessSquare: Square {self.name} pressed")
-        if self.piece is not None:
-            Logger.info(f"ChessSquare: Piece {self.piece.location} selected")
         self.board_widget.reset_square_colors()
-
-        if self.piece is not None:
-            # If there is a piece in this square
-            self.parent.app.selected_piece = self.piece
-            Logger.info(f"ChessSquare: self.piece.location: {self.piece.location}")
-            self.draw_moves()
-        elif self.parent.app.selected_piece is not None:
-            if self.parent.app.selected_piece == self.piece:
-                self.parent.app.selected_piece = None
-            else:
-                Logger.info(f"ChessSquare: Selected Piece {self.parent.app.selected_piece.location}")
-                Logger.info(f"ChessSquare: Trying to move to {self.name}")
-                self.parent.app.board.move(self.parent.app.selected_piece.location, self.name)
-                self.parent.app.selected_piece = None
-                self.parent.app.load_state_from(self.parent.app.board)
+        if self.parent.app.selected_piece is None:
+            if self.piece is not None:
+                self.parent.app.selected_piece = self.piece
+                self.draw_moves()
+        else:
+            if (self.piece is not None and self.parent.app.selected_piece.can_take(self.piece.location)) or self.parent.app.selected_piece.can_move_to(self.name):
+                try:
+                    self.parent.app.board.move(self.parent.app.selected_piece.location, self.name)
+                    self.parent.app.load_state_from(self.parent.app.board)
+                except Board.MoveException:
+                    Logger.info(f"ChessSquare: Invalid move from {self.parent.app.selected_piece} to {self.name}")
+                finally:
+                    self.parent.app.selected_piece = None
 
 
 class ChessBoard(GridLayout):
@@ -186,6 +228,7 @@ class ChessGui(App):
             self.rect_squares.size = instance.size
 
     def load_state_from(self, board: Board):
+        self.board = board
         for square_name in Board.iter_square_names():
             piece = board[square_name]
             if piece is not None:
@@ -194,14 +237,6 @@ class ChessGui(App):
                 assert piece == self.board_widget[square_name].piece
             else:
                 self.board_widget[square_name].clear()
-
-    def save_state_to(self, board: Board):
-        for square_name in Board.iter_square_names():
-            piece = self.board_widget[square_name].piece
-            if piece is not None:
-                board[square_name] = piece
-            else:
-                board[square_name] = None
 
 
 if __name__ == "__main__":
