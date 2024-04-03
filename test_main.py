@@ -32,7 +32,7 @@ def make_move(setup_board, source, destination, override=True):
     piece_color = piece.color
     if override:
         setup_board.active_player = piece_color
-    setup_board.move(source, destination)
+    setup_board.move(source, destination, override=override)
     assert isinstance(setup_board[destination], globals()[piece.__class__.__name__])
     assert setup_board[destination].color == piece_color
 
@@ -48,7 +48,7 @@ class TestChessGame:
     # Object Creation Tests
     def test_pawn_initialization(self, setup_board):
         pawn = Pawn("white", "a2", setup_board)
-        assert pawn.kind == "pawn" and pawn.color == "white" and pawn.location == "a2" and pawn.points == 1
+        assert isinstance(pawn, Pawn) and pawn.color == "white" and pawn.location == "a2" and pawn.points == 1
 
     # Board Initialization Tests
     def test_board_initialization(self, setup_board):
@@ -162,11 +162,11 @@ class TestChessGame:
 
     # Capture Mechanics Tests
     def test_capture_mechanics(self, setup_board):
-        black_pawn = Pawn("black", "b3", setup_board)  # Setup a black pawn
-        setup_board['b3'] = black_pawn
+        setup_board.add_piece(piece=Pawn("black", location="b3", board=self))  # Setup a black pawn
+        black_pawn = setup_board['b3']
         white_pawn = setup_board['a2']
         setup_board.move('a2', 'b3')  # White pawn captures black pawn
-        assert white_pawn.location == 'b3' and isinstance(setup_board.captured[0], Pawn) and setup_board.captured[0].color == "black"
+        assert white_pawn.location == 'b3' and isinstance(setup_board.captured_pieces['black'][0], Pawn) and setup_board.captured_pieces['black'][0].color == "black"
 
     def test_get_intermediate_squares(self):
         assert list(Board.get_intermediate_squares('a2', 'a5')) == ['a3', 'a4']
@@ -177,30 +177,34 @@ class TestChessGame:
 
     def test_extended_capture_mechanics(self, setup_board):
         # Setting up black and white pawns
-        setup_board['b3'] = Pawn("black", "b3", setup_board)
-        setup_board['c3'] = Pawn("black", "c3", setup_board)
-        setup_board['d3'] = Pawn("black", "d3", setup_board)
-        setup_board['e3'] = Pawn("black", "e3", setup_board)
+        setup_board.add_piece(Pawn("black", "b3", setup_board))
+        setup_board.add_piece(Pawn("black", "c3", setup_board))
+        setup_board.add_piece(Pawn("black", "d3", setup_board))
+        setup_board.add_piece(Pawn("black", "e3", setup_board))
 
         # Setting up other black pieces
-        setup_board['c6'] = Knight("black", "c6", setup_board)
-        setup_board['f6'] = Bishop("black", "f6", setup_board)
+        setup_board.add_piece(Knight("black", "c6", setup_board))
+        setup_board.add_piece(Bishop("black", "f6", setup_board))
 
         # White pawn captures black pawn
-        make_move(setup_board, 'a2', 'b3')
+        white_pawn = setup_board['a2']
+        setup_board.move('a2','b3')
+        assert white_pawn.location == 'b3' and isinstance(setup_board.captured_pieces['black'][0], Pawn) and setup_board.captured_pieces['black'][0].color == "black"
+
+        setup_board.move('h7','h6')
 
         # White pawn captures another black pawn
         pawn_b2 = setup_board['b2']
         setup_board.active_player = 'white'
         setup_board.move('b2', 'c3')
-        assert pawn_b2.location == 'c3' and isinstance(setup_board.captured[1], Pawn) and setup_board.captured[1].color == "black"
+        assert pawn_b2.location == 'c3' and isinstance(setup_board.captured_pieces['black'][1], Pawn) and setup_board.captured_pieces['black'][1].color == "black"
 
         # White knight capturing black pawn
-        setup_board['d5'] = Knight("white", "d5", setup_board)
+        setup_board.add_piece(Knight("white", "d5", setup_board))
         knight_d5 = setup_board['d5']
         setup_board.active_player = 'white'
         setup_board.move('d5', 'e3')
-        assert knight_d5.location == 'e3' and isinstance(setup_board.captured[2], Pawn) and setup_board.captured[2].color == "black"
+        assert knight_d5.location == 'e3' and isinstance(setup_board.captured_pieces['black'][2], Pawn) and setup_board.captured_pieces['black'][2].color == "black"
 
     def test_game_simulation_with_captures(self, setup_board):
         # Move white pawn from e2 to e4
@@ -234,4 +238,3 @@ class TestChessGame:
     ])
     def test_square_to_index(self, square, expected_index):
         assert ChessSquare.square_to_index(square) == expected_index
-
