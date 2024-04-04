@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict
 from functools import cache
 from typing import Optional
@@ -15,6 +16,9 @@ from pieces import Pawn, Knight, Bishop, Rook, Queen, King, Piece
 class Board:
     class MoveException(Exception):
         pass
+        # def __init__(self, message, highlights=None):
+        #     super().__init__(message)
+        #     self.highlights = highlights
 
     _precomputed_square_names = [f'{letter}{number}' for letter in 'abcdefgh' for number in range(1, 9)]
 
@@ -75,7 +79,7 @@ class Board:
         piece.has_moved = True
         piece.move_effects(destination)
 
-    def move(self, start, destination, override=False):
+    def move(self, start, destination=None, override=False):
         """
         Move a piece from start square to destination square if valid.
 
@@ -87,9 +91,12 @@ class Board:
         MoveException: If the move is not valid due to reasons like moving opponent's pieces, illegal move path,
         casting check on own king etc.
         """
-        if self[start] in ("O-O", "O-O-O"):
-            self.castle(self.active_player, self[start])
+        if start in ("O-O", "O-O-O"):
+            self.castle(self.active_player, start)
             return
+
+        if destination is None:
+            raise self.MoveException(f"Cannot move to nowhere. (destination=None)")
 
         if self[start] is None:
             raise self.MoveException(f"Cannot move from an empty square.")
@@ -282,6 +289,62 @@ class Board:
             retval = '-'
         return retval
 
+    def compact_move(self, move: str):
+        expanded_move = self.expand_move(move)
+        if move in ("O-O", "O-O-O"):
+            self.move(move)
+            if move == "O-O-O":
+                print(f"{self.active_player}: castles Queenside")
+            else:
+                print(f"{self.active_player}: castles Kingside")
+        else:
+            try:
+                self.move(expanded_move[0], expanded_move[1])
+            except self.MoveException as e:
+                print(e)
+            print(f"{self.active_player}: {expanded_move[0]} to {expanded_move[1]}")
+
+    @staticmethod
+    def parse_move(move: str) -> dict:
+        pattern = r'((?P<source_type>[KQNBR])?(?P<source_square>[a-h][1-8]?)?(?P<capture>x)?(?P<dest_type>[KQNBR])?(?P<dest_square>[a-h][1-8])(?P<check>\+)?)?(?P<kscastle>O-O)?(?P<qscastle>O-O-O)?'
+        parts = re.match(pattern, move)
+        type_dict = {'K': King, 'Q': Queen, 'R': Rook, 'B': Bishop, 'N': Knight}
+        return {'source_type': type_dict[parts['source_type']] if parts['source_type'] is not None else Pawn,
+                'dest_type': type_dict[parts['dest_type']] if parts['dest_type'] is not None else None,
+                'source_square': parts['source_square'],
+                'dest_square': parts['dest_square'],
+                'capture': True if parts['capture'] else False,
+                'check': True if parts['check'] else False,
+                'king_castle': True if parts['kscastle'] else False,
+                'queen_castle': True if parts['qscastle'] else False}
+
+    def expand_move(self, move) -> tuple[str, str | None]:
+        possibles = None
+        parts = self.parse_move(move)
+        if parts['king_castle'] or parts['queen_castle']:
+            return move, None
+        source_square = parts['source_square']
+        if source_square is None:
+            possibles = self.who_can_move_to(location=parts['dest_square'], piece_filter=parts['source_type'])
+            print(1)
+        elif parts['dest_square'] is None:
+            possibles = self.who_can_move_to(location=parts['source_square'], piece_filter=parts['source_type'])
+        elif len(source_square) == 1:
+            if source_square.isalpha():
+                if parts['capture']:
+                    print(1)
+                    possibles = self.who_can_capture(location=parts['dest_square'], file_filter=source_square, piece_filter=parts['source_type'])
+                    print(1)
+                else:
+                    possibles = self.who_can_move_to(location=parts['dest_square'], file_filter=source_square, piece_filter=parts['source_type'])
+
+        if possibles is None or len(possibles) == 0:
+            raise self.MoveException(f"No possibilities were found for {move}")
+        if len(possibles) > 1:
+            raise self.MoveException(f"Move {move} is not sufficiently described. {len(possibles)} possibilities {possibles} were found")
+        source_square = possibles[0].location
+        return source_square, parts['dest_square']
+
     @staticmethod
     def _boundry_check(location):
         """
@@ -414,24 +477,39 @@ class Board:
     def create_board_text(self, highlight=None) -> Text:
         if isinstance(highlight, str):
             highlight = [highlight]
-        board_text = Text()
+
+        # Add file labels at the top
+        board_text = Text("  a b c d e f g h\n", style="bold")
+
         for number in range(8, 0, -1):
+            # Add rank label at the start of each line
+            board_text.append(f"{number} ", style="bold")
+
             for letter in "abcdefgh":
                 square = f'{letter}{number}'
                 square_color = self.get_square_color(square)
                 piece = self.squares[square]
+
                 if piece is not None:
                     square_text = f'{piece} '
                     piece_color = self.black_piece_color if piece.color == 'black' else self.white_piece_color
                 else:
                     square_text = '  '
                     piece_color = None
+
                 if highlight is not None and square in highlight:
                     square_color = self.highlight_color
                 else:
                     square_color = self.black_square_color if square_color == "black" else self.white_square_color
+
                 piece_color = square_color if piece_color is None else piece_color
                 square_style = f"{piece_color} on {square_color}"
                 board_text.append(text=square_text, style=square_style)
-            board_text.append('\n')
+
+            # Add rank label at the end of each line
+            board_text.append(f" {number}\n", style="bold")
+
+        # Add file labels at the bottom
+        board_text.append("  a b c d e f g h", style="bold")
+
         return board_text

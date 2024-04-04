@@ -44,13 +44,18 @@ def run_games(filename):
         pgnloader.load_str(game)
         try:
             pgnloader.play_game()
-        except Exception:
-            table.add_row(pgnloader.vs_str, "[bold red]FAIL[/bold red]")
-            num_fail += 1
-            failed_games.append(game)
-        else:
-            table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
-            num_pass += 1
+        except Exception as e:
+            pgnloader.board.print()
+            raise e
+        # except Exception as e:
+        #     print(e)
+        #     pgnloader.board.print()
+        #     table.add_row(pgnloader.vs_str, "[bold red]FAIL[/bold red]")
+        #     num_fail += 1
+        #     failed_games.append(game)
+        # else:
+        #     table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
+        #     num_pass += 1
     table.title = f"{filename}\n{(num_pass / (num_pass + num_fail)) * 100:.2f}%"
     console = Console()
     console.print(table)
@@ -59,5 +64,6 @@ def run_games(filename):
     with open(filename, "w") as outfile:
         for game in failed_games:
             outfile.write(game + '\n')
+
 
 run_games("lichess_2013-01-example.pgn")

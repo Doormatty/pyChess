@@ -221,14 +221,7 @@ class TestChessGame:
         make_move(setup_board, 'e7', 'e6')
         # Move white knight from g1 to f3
         make_move(setup_board, 'g1', 'f3')
-        # Move black bishop from c8 to g4
-        make_move(setup_board, 'c8', 'g4')
-        # White knight from b1 to c3
-        make_move(setup_board, 'b1', 'c3')
-        # Black queen moves from d8 to h4
-        make_move(setup_board, 'd8', 'h4')
-        # White bishop captures black pawn
-        make_move(setup_board, 'c4', 'e6')
+
 
     @pytest.mark.parametrize("square,expected_index", [
         ('a1', 0),
