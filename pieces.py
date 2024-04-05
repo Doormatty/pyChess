@@ -24,17 +24,14 @@ class Piece:
     @location.setter
     def location(self, value):
         self._location = value
-        try:
-            self.int_vert = int(self._location[1])
-            self.int_horz = ord(self._location[0].lower())
-        except TypeError:
-            print('')
+        self.int_vert = int(self._location[1])
+        self.int_horz = ord(self._location[0].lower())
 
     @cache
-    def get_move_distance(self, destination):
+    def get_move_distance(self, destination) -> tuple[int, int]:
         if isinstance(destination, str):
             vertical = int(destination[1]) - self.int_vert
-            horizontal = self.int_horz - ord(destination[0].lower())
+            horizontal = ord(destination[0].lower()) - self.int_horz
         else:
             vertical = self.int_vert - destination.int_vert
             horizontal = self.int_horz - destination.int_horz
@@ -53,13 +50,13 @@ class Piece:
         else:
             return "black"
 
-    def can_move_to(self, location):
+    def can_move_to(self, location: str):
         raise NotImplementedError
 
-    def can_take(self, location):
+    def can_take(self, location: str) -> bool:
         return self.can_move_to(location) and self.board[location] is not None and self.board[location].color == self.anticolor()
 
-    def get_all_possible_moves(self):
+    def get_all_possible_moves(self) -> list[str]:
         possible_moves = []
         for square in self.board.iter_square_names():
             if self.can_move_to(square) or self.can_take(square):
@@ -89,7 +86,7 @@ class Pawn(Piece):
     def __repr__(self):
         return f"Pawn({self.color=}, {self.location=})"
 
-    def _enpassant_squares(self):
+    def _enpassant_squares(self) -> tuple[str] | tuple[str, str]:
         h = self.location[0]
         v = int(self.location[1])
         if self.color == "black":
@@ -107,7 +104,7 @@ class Pawn(Piece):
             else:
                 return f"{chr(ord(h) - 1)}{v - 1}", f"{chr(ord(h) + 1)}{v - 1}"
 
-    def move_effects(self, location):
+    def move_effects(self, location: str):
         self.starting_position = False
         self.board.halfmove_counter = 0
         possible_enpassants = []
@@ -117,7 +114,7 @@ class Pawn(Piece):
         if possible_enpassants:
             self.board.enpassants = possible_enpassants
 
-    def can_move_to(self, location):
+    def can_move_to(self, location: str):
         move_distance = self.get_move_distance(location)
         if move_distance[0] != 0:
             return False
@@ -127,9 +124,9 @@ class Pawn(Piece):
         if move_distance[1] == 1 * color or (move_distance[1] == 2 * color and self.starting_position):
             return True
 
-    def can_take(self, location):
+    def can_take(self, location: str):
         move_distance = self.get_move_distance(location)
-        if move_distance[0] in (1,-1) and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
+        if move_distance[0] in (1, -1) and ((move_distance[1] in (1, 2) and self.color == "white") or (move_distance[1] in (-1, -2) and self.color == "black")):
             return True
         return False
 
@@ -247,7 +244,7 @@ class King(Piece):
 
     def can_move_to(self, location):
         move_distance = self.get_move_distance(location)
-        if abs(move_distance[0]) > 1 and abs(move_distance[1]) > 1:
+        if abs(move_distance[0]) > 1 or abs(move_distance[1]) > 1:
             return False
         if location is None:
             raise ValueError("Location cannot be None")

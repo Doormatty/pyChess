@@ -1,7 +1,7 @@
 import re
 from collections import defaultdict
+from collections.abc import Iterator
 from functools import cache
-from typing import Optional
 
 from rich.console import Console
 from rich.text import Text
@@ -28,7 +28,7 @@ class Board:
         """
         self.console = Console()
         self.pieces = {"white": [], "black": []}
-        self.squares = defaultdict(lambda: None)
+        self.squares: defaultdict[str, None | Piece] = defaultdict(lambda: None)
         self.captured_pieces = {"white": [], "black": []}
         self.active_player = 'white'
         self.turn_number = 0
@@ -41,7 +41,7 @@ class Board:
         self.white_piece_color = 'green'
         self.highlight_color = 'red'
 
-    def __getitem__(self, square) -> Optional[Piece]:
+    def __getitem__(self, square) -> Piece | None:
         """
         Overload the [] operator to access squares on the board.
 
@@ -53,7 +53,7 @@ class Board:
         """
         return self.squares[square]
 
-    def __setitem__(self, square, piece):
+    def __setitem__(self, square: str, piece: Piece):
         """
         Overload the [] operator to place pieces on the board.
 
@@ -63,7 +63,7 @@ class Board:
         """
         self.squares[square] = piece
 
-    def add_piece(self, piece):
+    def add_piece(self, piece: Piece):
         color = piece.color
         location = piece.location
         if self.squares[location] is not None:
@@ -71,11 +71,11 @@ class Board:
         self.pieces[color].append(piece)
         self.squares[location] = piece
 
-    def _force_move(self, start, destination):
-        piece = self[start]
-        self[start] = None
+    def _force_move(self, start: str, destination: str):
+        piece = self.squares[start]
+        self.squares[start] = None
         piece.location = destination
-        self[destination] = piece
+        self.squares[destination] = piece
         piece.has_moved = True
         piece.move_effects(destination)
 
@@ -98,9 +98,9 @@ class Board:
         if destination is None:
             raise self.MoveException(f"Cannot move to nowhere. (destination=None)")
 
-        if self[start] is None:
+        if self.squares[start] is None:
             raise self.MoveException(f"Cannot move from an empty square.")
-        piece = self[start]
+        piece = self.squares[start]
         if piece.color != self.active_player:
             raise self.MoveException(f"It's {self.active_player}'s move, you cannot move {piece.color} pieces.")
         if not override:
@@ -109,12 +109,12 @@ class Board:
         if not self._boundry_check(destination):
             raise self.MoveException(f"Move of {piece.color} {self.__class__.__name__} from {piece.location} to {destination} is an illegal move due to {destination} being out of bounds.")
         # Are we only moving, and not capturing?
-        if piece.can_move_to(destination) and self[destination] is None:
+        if piece.can_move_to(destination) and self.squares[destination] is None:
             self._force_move(start, destination)
         # Are we moving and capturing?
-        elif piece.can_take(destination) and self[destination] is not None:
+        elif piece.can_take(destination) and self.squares[destination] is not None:
 
-            if self[destination].color == piece.color:
+            if self.squares[destination].color == piece.color:
                 raise self.MoveException(f"Cannot capture piece of same color.")
             # Remove the taken piece's location, add it to the captured list
             self.captured_pieces[piece.anticolor()].append(self[destination])
@@ -122,8 +122,8 @@ class Board:
             self.pieces[piece.anticolor()].remove(self[destination])
 
             # Set the piece's position to where the taken piece was
-            self[destination] = piece
-            self[start] = None
+            self.squares[destination] = piece
+            self.squares[start] = None
             piece.location = destination
             piece.has_moved = True
             # reset the halfmove counter
@@ -135,7 +135,7 @@ class Board:
             self.active_player = "black" if self.active_player == "white" else "white"
         self.check_for_checkmate()
 
-    def iter_square_names(self):
+    def iter_square_names(self) -> Iterator[str]:
         """
         Iterate over all squares of the board from left to right and top to bottom.
 
@@ -145,7 +145,7 @@ class Board:
         return iter(self._precomputed_square_names)
 
     @staticmethod
-    def iter_rev_square_names():
+    def iter_rev_square_names() -> Iterator[str]:
         """
         Iterate over all squares of the board from right to left and bottom to top.
 
@@ -164,7 +164,7 @@ class Board:
 
     @staticmethod
     @cache
-    def get_square_color(square):
+    def get_square_color(square: str) -> str:
         """
         Check the color of the square, using the board's 8x8 grid and the chess rule of alternation.
 
@@ -178,7 +178,7 @@ class Board:
 
     @staticmethod
     @cache
-    def get_move_distance(source, destination):
+    def get_move_distance(source: str, destination: str) -> tuple[int, int]:
         """
         Computes the vertical and horizontal distance between two squares.
 
@@ -195,7 +195,7 @@ class Board:
 
     @staticmethod
     @cache
-    def get_intermediate_squares(start, end: str):
+    def get_intermediate_squares(start: str, end: str) -> Iterator[tuple[str, str]]:
         """
         Get all squares that a piece must cross to get from start to end.
         This does not include the end square but includes the start square.
@@ -228,7 +228,7 @@ class Board:
             for i in range(1, abs(move_distance[0])):
                 yield f'{chr(ord(start[0]) + i * step_x)}{int(start[1]) + i * step_y}'
 
-    def is_move_clear(self, start, destination):
+    def is_move_clear(self, start: str, destination: str) -> bool:
         """
         Check if a move from start square to destination square is clear, i.e., there are no other pieces blocking the way.
 
@@ -244,7 +244,7 @@ class Board:
                 return False
         return True
 
-    def castle(self, color, move):
+    def castle(self, color: str, move: str):
         if move == "O-O":
             if color == "white":
                 self._force_move("e1", "g1")
@@ -264,7 +264,7 @@ class Board:
                 self._force_move("a8", "e8")
                 self.active_player = "white"
 
-    def can_castle(self):
+    def can_castle(self) -> str:
         """
         Check if either of the kings can still legally castle.
 
@@ -290,7 +290,8 @@ class Board:
         return retval
 
     def compact_move(self, move: str):
-        expanded_move = self.expand_move(move)
+        parsed_move = self.parse_move(move)
+        expanded_move = self.expand_move(parsed_move)
         if move in ("O-O", "O-O-O"):
             self.move(move)
             if move == "O-O-O":
@@ -306,47 +307,46 @@ class Board:
 
     @staticmethod
     def parse_move(move: str) -> dict:
-        pattern = r'((?P<source_type>[KQNBR])?(?P<source_square>[a-h][1-8]?)?(?P<capture>x)?(?P<dest_type>[KQNBR])?(?P<dest_square>[a-h][1-8])(?P<check>\+)?)?(?P<kscastle>O-O)?(?P<qscastle>O-O-O)?'
+        pattern = r'((?P<source_type>[KQNBR])?(?P<source_square>[a-h][1-8]?)?(?P<capture>x)?(?P<dest_type>[KQNBR])?(?P<dest_square>[a-h][1-8])(?P<check>\+)?)?(?P<kscastle>O-O)?(?P<qscastle>O-O-O)?(?P<checkmate>#)?'
         parts = re.match(pattern, move)
         type_dict = {'K': King, 'Q': Queen, 'R': Rook, 'B': Bishop, 'N': Knight}
-        return {'source_type': type_dict[parts['source_type']] if parts['source_type'] is not None else Pawn,
+        return {'move': move,
+                'source_type': type_dict[parts['source_type']] if parts['source_type'] is not None else Pawn,
                 'dest_type': type_dict[parts['dest_type']] if parts['dest_type'] is not None else None,
                 'source_square': parts['source_square'],
                 'dest_square': parts['dest_square'],
                 'capture': True if parts['capture'] else False,
                 'check': True if parts['check'] else False,
+                'checkmate': True if parts['checkmate'] else False,
                 'king_castle': True if parts['kscastle'] else False,
                 'queen_castle': True if parts['qscastle'] else False}
 
-    def expand_move(self, move) -> tuple[str, str | None]:
+    def expand_move(self, parsed_move) -> tuple[str, str | None]:
+        #TODO - Need to add capturing when elif len(source_square) == 1: isn' true!!!
         possibles = None
-        parts = self.parse_move(move)
-        if parts['king_castle'] or parts['queen_castle']:
-            return move, None
-        source_square = parts['source_square']
+        if parsed_move['king_castle'] or parsed_move['queen_castle']:
+            return parsed_move, None
+        source_square = parsed_move['source_square']
         if source_square is None:
-            possibles = self.who_can_move_to(location=parts['dest_square'], piece_filter=parts['source_type'])
-            print(1)
-        elif parts['dest_square'] is None:
-            possibles = self.who_can_move_to(location=parts['source_square'], piece_filter=parts['source_type'])
+            possibles = self.who_can_move_to(location=parsed_move['dest_square'], piece_filter=parsed_move['source_type'].__qualname__)
+        elif parsed_move['dest_square'] is None:
+            possibles = self.who_can_move_to(location=parsed_move['source_square'], piece_filter=parsed_move['source_type'].__qualname__)
         elif len(source_square) == 1:
             if source_square.isalpha():
-                if parts['capture']:
-                    print(1)
-                    possibles = self.who_can_capture(location=parts['dest_square'], file_filter=source_square, piece_filter=parts['source_type'])
-                    print(1)
+                if parsed_move['capture']:
+                    possibles = self.who_can_capture(location=parsed_move['dest_square'], file_filter=source_square, piece_filter=parsed_move['source_type'].__qualname__)
                 else:
-                    possibles = self.who_can_move_to(location=parts['dest_square'], file_filter=source_square, piece_filter=parts['source_type'])
+                    possibles = self.who_can_move_to(location=parsed_move['dest_square'], file_filter=source_square, piece_filter=parsed_move['source_type'].__qualname__)
 
         if possibles is None or len(possibles) == 0:
-            raise self.MoveException(f"No possibilities were found for {move}")
+            raise self.MoveException(f"No possibilities were found for {parsed_move['move']}")
         if len(possibles) > 1:
-            raise self.MoveException(f"Move {move} is not sufficiently described. {len(possibles)} possibilities {possibles} were found")
+            raise self.MoveException(f"Move {parsed_move['move']} is not sufficiently described. {len(possibles)} possibilities {possibles} were found")
         source_square = possibles[0].location
-        return source_square, parts['dest_square']
+        return source_square, parsed_move['dest_square']
 
     @staticmethod
-    def _boundry_check(location):
+    def _boundry_check(location: str) -> bool:
         """
         Check if the denoted location is within the boundaries of the chess board.
 
@@ -401,7 +401,7 @@ class Board:
         self.active_player = "white"
         for square in self.iter_square_names():
             if square[1] in ('3', '4', '5', '6'):
-                self[square] = None
+                self.squares[square] = None
                 continue
             elif square[1] == '2':
                 self.add_piece(piece=Pawn('white', location=square, board=self))
@@ -441,28 +441,30 @@ class Board:
             color = self.active_player
         pieces = []
         for piece in self.pieces[color]:
-            if piece_filter is not None:
-                if not isinstance(piece, piece_filter):
-                    continue
-            if file_filter is not None:
-                if piece.location[0] != file_filter:
-                    continue
+            if piece_filter is not None and piece.__class__.__name__ != piece_filter:
+                continue
+            if file_filter is not None and piece.location[0] != file_filter:
+                continue
             if piece.can_move_to(location):
                 pieces.append(piece)
         return pieces
 
-    def who_can_capture(self, location, piece_filter=None, file_filter=None, color=None):
+    def who_can_capture(self, location, piece_filter=None, file_filter=None):
         if location is None:
             raise ValueError("Location cannot be None")
         pieces = []
-        target = self[location]
+        target = self.squares[location]
         if target is None:
             raise self.MoveException(f"Nothing to capture at {location}!")
-        color = target.anticolor() if color is None else color
+        color = target.anticolor()
+
         for piece in self.pieces[color]:
-            if (piece_filter is None or isinstance(piece, piece_filter)) and (file_filter is None or piece.location[0] in file_filter):
-                if piece.can_take(location):
-                    pieces.append(piece)
+            if piece_filter is not None and piece.__class__.__name__ != piece_filter:
+                continue
+            if file_filter is not None and piece.location[0] not in file_filter:
+                continue
+            if piece.can_take(location):
+                pieces.append(piece)
         return pieces
 
     def check_for_checkmate(self):
