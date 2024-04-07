@@ -1,3 +1,4 @@
+import io
 import logging
 import re
 from collections import defaultdict
@@ -9,6 +10,12 @@ from rich.logging import RichHandler
 from rich.text import Text
 
 from pieces import Pawn, Knight, Bishop, Rook, Queen, King, Piece
+
+
+def rich_pprint(obj):
+    with io.StringIO() as buf, Console(file=buf, force_terminal=True) as console:
+        console.print(obj)
+        return buf.getvalue()
 
 
 # TODO - Write function that returns a dictionary of pieces, with the values being all possible moves and captures possible by that piece.
@@ -30,25 +37,20 @@ class Board:
                 self.board.console.print(f"{num + 1}. {move}", style="bold green")
 
     class TempMove:
-        def __init__(self, board: 'Board'):
-            self.undo_state = dict()
-            self.attrs = ('turn_number', 'halfmove_counter', 'enpassants', 'castling', 'active_player', 'moves')
-            self.deepattrs = ('squares', 'pieces')
+        def __init__(self, board):
             self.board = board
+            self.temp_board = None
 
-        def __enter__(self) -> 'Board.TempMove':
-            for attr in self.attrs:
-                self.undo_state[attr] = getattr(self.board, attr)
-            for attr in self.deepattrs:
-                self.undo_state[attr] = deepcopy(getattr(self.board, attr))
-            return self
+        def __enter__(self):
+            self.temp_board = deepcopy(self.board)
+            return self.board
 
-        def __exit__(self, exc_type, exc_value, traceback):
-            for attr in self.attrs:
-                setattr(self.board, attr, self.undo_state[attr])
-            for attr in self.deepattrs:
-                setattr(self.board, attr, self.undo_state[attr])
-            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.board.pieces.clear()
+            self.board.pieces.update(self.temp_board.pieces)
+            self.board.squares.clear()
+            self.board.squares.update(self.temp_board.squares)
+
 
     _precomputed_square_names = [f'{letter}{number}' for letter in 'abcdefgh' for number in range(1, 9)]
 
@@ -56,7 +58,7 @@ class Board:
         """
         Initialize the chess board. Set up required variables and clear the board.
         """
-        self.console = Console(width=160)
+        self.console = Console()
         self.pieces = {"white": [], "black": []}
         self.squares: defaultdict[str, None | Piece] = defaultdict(lambda: None)
         self.captured_pieces = {"white": [], "black": []}
@@ -71,9 +73,20 @@ class Board:
         self.black_piece_color = 'blue'
         self.white_piece_color = 'green'
         self.highlight_color = 'red'
-        logging.basicConfig(level="NOTSET", format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True)])
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.DEBUG)
+        logging.basicConfig(level="INFO", format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True, console=self.console)])
+        self.logger = logging.getLogger("rich")
+        self.logger.setLevel(logging.INFO)
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            if k == 'squares':
+                setattr(result, k, defaultdict(lambda: None, deepcopy(dict(v), memo)))
+            elif k not in ['console', 'logger']:
+                setattr(result, k, deepcopy(v, memo))
+        return result
 
     def __getitem__(self, square) -> Piece | None:
         """
@@ -104,7 +117,7 @@ class Board:
         piece = self[start]
         self[start] = None
         self[destination] = piece
-        piece.move_effects(destination)
+        piece.move_effects(destination, self)
 
     def move(self, start, destination=None, override=False):
         """
@@ -136,22 +149,25 @@ class Board:
         if not self._boundry_check(destination):
             raise self.MoveException(self, f"Move of {piece.color} {self.__class__.__name__} from {piece.location} to {destination} is an illegal move due to {destination} being out of bounds.")
         # Are we only moving, and not capturing?
-        if piece.can_move_to(destination) and self.squares[destination] is None:
+        if piece.can_move_to(destination, self) and self.squares[destination] is None:
             self._force_move(start, destination)
         # Are we moving and capturing?
-        elif piece.can_take(destination) and self.squares[destination] is not None:
-
+        elif piece.can_take(destination, self) and self.squares[destination] is not None:
             if self.squares[destination].color == piece.color:
                 raise self.MoveException(self, f"The {piece.color} {piece.__class__.__name__} cannot capture a {piece.color} {self.squares[destination].__class__.__name__} (same color).")
+            captured_piece = self.squares[destination]
             # Remove the taken piece's location, add it to the captured list
-            self.captured_pieces[piece.anticolor()].append(self[destination])
+            self.captured_pieces[piece.anticolor()].append(captured_piece)
             # Remove the taken piece from the list
-            self.pieces[piece.anticolor()].remove(self[destination])
+            try:
+                self.pieces[piece.anticolor()].remove(captured_piece)
+            except ValueError:
+                print(1)
 
             # Set the piece's position to where the taken piece was
             self[destination] = piece
             self.squares[start] = None
-            piece.move_effects(destination)
+            piece.move_effects(destination, self)
         else:
             raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {destination} is an illegal move")
         if not override:
@@ -348,9 +364,16 @@ class Board:
                 'queen_castle': True if parts['qscastle'] else False}
 
     def does_move_cause_self_check(self, source, destination):
+        original_source = deepcopy(self.squares[source])
+        original_pieces = deepcopy(self.pieces)
+        original_destination = deepcopy(self.squares[destination])
         with self.TempMove(self):
             self._force_move(source, destination)
-            return self.is_king_in_check(self.active_player)
+            result = self.is_king_in_check(self.active_player)
+            self[source] = original_source
+            self[destination] = original_destination
+            self.pieces = deepcopy(original_pieces)
+        return result
 
     def is_king_in_check(self, player):
         king = [piece for piece in self.pieces[player] if piece.__class__.__name__ == 'King'][0]
@@ -382,8 +405,14 @@ class Board:
         if not possibles:
             raise self.MoveException(self, f"No possibilities were found for {parsed_move['move']} in {parsed_move} even before self-check detection!")
         possible_count = len(possibles)
-        possibles = [possible for possible in possibles if self.does_move_cause_self_check(possible.location, dest_square)]
-        logging.info(f"Removed {len(possibles) - possible_count} possible moves due to self-check.")
+        temp = []
+
+        for possible in deepcopy(possibles):
+            result = self.does_move_cause_self_check(possible.location, dest_square)
+            if not result:
+                temp.append(possible)
+        possibles = temp
+        logging.debug(f"Removed {len(possibles) - possible_count} possible moves due to self-check.")
         if not possibles:
             raise self.MoveException(self, f"No possibilities were found for {parsed_move['move']} in {parsed_move} after self-check check.")
         if len(possibles) > 1:
@@ -454,22 +483,22 @@ class Board:
             if row in ('3', '4', '5', '6'):
                 self.squares[square] = None
             elif row == '2':
-                self.add_piece(piece=Pawn('white', location=square, board=self))
+                self.add_piece(piece=Pawn('white', location=square))
             elif row == '7':
-                self.add_piece(piece=Pawn('black', location=square, board=self))
+                self.add_piece(piece=Pawn('black', location=square))
             elif row in ('1', '8'):
                 color = 'white' if row == '1' else 'black'
 
                 if col in ('a', 'h'):
-                    self.add_piece(piece=Rook(color, location=square, board=self))
+                    self.add_piece(piece=Rook(color, location=square))
                 elif col in ('b', 'g'):
-                    self.add_piece(piece=Knight(color, location=square, board=self))
+                    self.add_piece(piece=Knight(color, location=square))
                 elif col in ('c', 'f'):
-                    self.add_piece(piece=Bishop(color, location=square, board=self))
+                    self.add_piece(piece=Bishop(color, location=square))
                 elif col == 'd':
-                    self.add_piece(piece=Queen(color, location=square, board=self))
+                    self.add_piece(piece=Queen(color, location=square))
                 elif col == 'e':
-                    self.add_piece(piece=King(color, location=square, board=self))
+                    self.add_piece(piece=King(color, location=square))
 
     def who_can_move_to(self, location, color=None, piece_filter=None, file_filter=None):
         if location is None:
@@ -480,7 +509,7 @@ class Board:
         for piece in self.pieces[color]:
             if piece_filter is None or piece.__class__.__name__ == piece_filter:
                 if file_filter is None or piece.location[0] == file_filter:
-                    if piece.can_move_to(location):
+                    if piece.can_move_to(location, self):
                         pieces.append(piece)
         return pieces
 
@@ -498,14 +527,14 @@ class Board:
                 continue
             if file_filter is not None and piece.location[0] not in file_filter:
                 continue
-            if piece.can_take(location):
+            if piece.can_take(location, self):
                 pieces.append(piece)
         return pieces
 
     def check_for_checkmate(self):
         oppoenent_pieces = self.pieces["black" if self.active_player == "white" else "white"]
         opponent_king = [x for x in oppoenent_pieces if isinstance(x, King)][0]
-        if opponent_king.is_checkmate():
+        if opponent_king.is_checkmate(self):
             print("!!!!CHECKMATE!!!!")
 
     def print(self, highlights: str | list[str] | None = None) -> None:
