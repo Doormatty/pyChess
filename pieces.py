@@ -1,3 +1,4 @@
+import copy
 from functools import cache
 
 
@@ -17,6 +18,13 @@ class Piece:
         self.points = None
         self.has_moved = False
 
+    def __deepcopy__(self, memo):
+        copied_piece = copy.copy(self)
+        if hasattr(self, 'has_moved'):
+            copied_piece.has_moved = self.has_moved
+        copied_piece.board = memo.get(id(self.board), self.board)
+        return copied_piece
+
     @property
     def location(self):
         return self._location
@@ -29,12 +37,8 @@ class Piece:
 
     @cache
     def get_move_distance(self, destination) -> tuple[int, int]:
-        if isinstance(destination, str):
-            vertical = int(destination[1]) - self.int_vert
-            horizontal = ord(destination[0].lower()) - self.int_horz
-        else:
-            vertical = self.int_vert - destination.int_vert
-            horizontal = self.int_horz - destination.int_horz
+        vertical = int(destination[1]) - self.int_vert
+        horizontal = ord(destination[0].lower()) - self.int_horz
         return horizontal, vertical
 
     @staticmethod
@@ -73,9 +77,8 @@ class Pawn(Piece):
             location = self.index_to_square(location)
         super().__init__(color=color, location=location, board=board)
         self.points = 1
-        self.starting_position = None
-        if location[1] in ('2', '7'):
-            self.starting_position = True
+        if location[1] not in ('2', '7'):
+            self.has_moved = True
 
     def __str__(self):
         if self.color == "black":
@@ -105,7 +108,7 @@ class Pawn(Piece):
                 return f"{chr(ord(h) - 1)}{v - 1}", f"{chr(ord(h) + 1)}{v - 1}"
 
     def move_effects(self, location: str):
-        self.starting_position = False
+        self.has_moved = True
         self.board.halfmove_counter = 0
         possible_enpassants = []
         for square in self._enpassant_squares():
@@ -121,12 +124,15 @@ class Pawn(Piece):
         if not self.board.is_move_clear(self.location, location):
             return False
         color = 1 if self.color == "white" else -1
-        if move_distance[1] == 1 * color or (move_distance[1] == 2 * color and self.starting_position):
+        if move_distance[1] == (1 * color):
             return True
+        if move_distance[1] == (2 * color) and not self.has_moved:
+            return True
+        return False
 
     def can_take(self, location: str):
         move_distance = self.get_move_distance(location)
-        if move_distance[0] in (1, -1) and ((move_distance[1] in (1, 2) and self.color == "white") or (move_distance[1] in (-1, -2) and self.color == "black")):
+        if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
             return True
         return False
 
@@ -191,6 +197,9 @@ class Rook(Piece):
         move_distance = self.get_move_distance(location)
         return move_distance[0] == 0 or move_distance[1] == 0
 
+    def move_effects(self, location: str):
+        self.has_moved = True
+
 
 class Queen(Piece):
     def __init__(self, color, location, board):
@@ -227,6 +236,9 @@ class King(Piece):
     def __repr__(self):
         return f"King({self.color=}, {self.location=})"
 
+    def move_effects(self, location: str):
+        self.has_moved = True
+
     def is_checkmate(self):
         all_adjacent_squares_blocked = True
         for y in (-1, 0, 1):
@@ -244,7 +256,7 @@ class King(Piece):
 
     def can_move_to(self, location):
         move_distance = self.get_move_distance(location)
-        if abs(move_distance[0]) > 1 or abs(move_distance[1]) > 1:
+        if move_distance[0] not in (1, 0, -1) or move_distance[1] not in (1, 0, -1):
             return False
         if location is None:
             raise ValueError("Location cannot be None")

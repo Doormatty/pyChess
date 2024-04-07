@@ -42,20 +42,19 @@ def run_games(filename):
     for game in read_games(filename):
         pgnloader = PgnLoader()
         pgnloader.load_str(game)
+        print("\n")
+        print(pgnloader.vs_str)
+        print("===========================")
         try:
             pgnloader.play_game()
-        except Exception as e:
-            pgnloader.board.print()
-            raise e
-        # except Exception as e:
-        #     print(e)
-        #     pgnloader.board.print()
-        #     table.add_row(pgnloader.vs_str, "[bold red]FAIL[/bold red]")
-        #     num_fail += 1
-        #     failed_games.append(game)
-        # else:
-        #     table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
-        #     num_pass += 1
+        except pgnloader.board.MoveException as e:
+            e.rich_exception()
+            table.add_row(pgnloader.vs_str, "[bold red]FAIL[/bold red]")
+            num_fail += 1
+            failed_games.append(game)
+        else:
+            table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
+            num_pass += 1
     table.title = f"{filename}\n{(num_pass / (num_pass + num_fail)) * 100:.2f}%"
     console = Console()
     console.print(table)

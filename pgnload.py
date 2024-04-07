@@ -12,7 +12,7 @@ class PgnLoader:
             self.highlights = highlights
 
         def __str__(self):
-            return f"{super().__str__()}\n{self.board.create_board_text(highlight=self.highlights)}"
+            return f"{super().__str__()}\n{self.board.create_board_text(highlights=self.highlights)}"
 
     def __init__(self):
         self.data = None
