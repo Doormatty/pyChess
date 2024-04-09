@@ -52,6 +52,7 @@ def run_games(filename):
             table.add_row(pgnloader.vs_str, "[bold red]FAIL[/bold red]")
             num_fail += 1
             failed_games.append(game)
+            exit(1)
         else:
             table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
             num_pass += 1

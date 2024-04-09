@@ -1,24 +1,32 @@
 from copy import deepcopy
+
+
 class Piece:
     class MoveException(Exception):
         pass
 
     def __init__(self, color, location):
         self._location = location
-        self.int_vert = int(self._location[1])
-        self.int_horz = ord(self._location[0].lower())
+        if location is not None:
+            self.int_vert = int(self._location[1])
+            self.int_horz = ord(self._location[0].lower())
         self.color = color
         self.points = None
         self.has_moved = False
 
     def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls(self.color, self.location)
+        result = self.__class__(self.color, self.location)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
             if k not in ['_location', 'int_vert', 'int_horz']:
-                setattr(result, k, deepcopy(v, memo))
+                setattr(result, k, v)
         return result
+
+    def __eq__(self, other):
+        return self.color == other.color and self.location == other.location
+
+    def __ne__(self, other):
+        return self.color != other.color or self.location != other.location
 
     @property
     def location(self):
@@ -26,9 +34,14 @@ class Piece:
 
     @location.setter
     def location(self, value):
-        self._location = value
-        self.int_vert = int(self._location[1])
-        self.int_horz = ord(self._location[0].lower())
+        if value is None:
+            self._location = None
+            self.int_horz = None
+            self.int_vert = None
+        else:
+            self._location = value
+            self.int_vert = int(self._location[1])
+            self.int_horz = ord(self._location[0].lower())
 
     def anticolor(self):
         if self.color == "black":
@@ -57,8 +70,6 @@ class Pawn(Piece):
     def __init__(self, color, location):
         super().__init__(color=color, location=location)
         self.points = 1
-        if location[1] not in ('2', '7'):
-            self.has_moved = True
 
     def __str__(self):
         if self.color == "black":
@@ -67,7 +78,7 @@ class Pawn(Piece):
             return "♟"
 
     def __repr__(self):
-        return f"Pawn({self.color=}, {self.location=})"
+        return f"Pawn('{self.color}', '{self.location}')"
 
     def _enpassant_squares(self) -> tuple[str] | tuple[str, str]:
         h = self.location[0]
@@ -88,6 +99,8 @@ class Pawn(Piece):
                 return f"{chr(ord(h) - 1)}{v - 1}", f"{chr(ord(h) + 1)}{v - 1}"
 
     def move_effects(self, location: str, board):
+        if self.location is None:
+            return
         self.has_moved = True
         board.halfmove_counter = 0
         possible_enpassants = []
@@ -98,6 +111,8 @@ class Pawn(Piece):
             board.enpassants = possible_enpassants
 
     def can_move_to(self, location: str, board):
+        if self.location is None:
+            return False
         move_distance = board.get_move_distance(self.location, location)
         if move_distance[0] != 0:
             return False
@@ -111,6 +126,8 @@ class Pawn(Piece):
         return False
 
     def can_take(self, location: str, board):
+        if self.location is None:
+            return False
         move_distance = board.get_move_distance(self.location, location)
         if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
             return True
@@ -129,9 +146,11 @@ class Knight(Piece):
             return "♞"
 
     def __repr__(self):
-        return f"Knight({self.color=}, {self.location=})"
+        return f"Knight('{self.color}', '{self.location}')"
 
     def can_move_to(self, location, board):
+        if self.location is None:
+            return False
         move_distance = board.get_move_distance(self.location, location)
         return (move_distance[0] in (1, -1) and move_distance[1] in (2, -2)) or (move_distance[0] in (2, -2) and move_distance[1] in (1, -1))
 
@@ -148,9 +167,11 @@ class Bishop(Piece):
             return "♝"
 
     def __repr__(self):
-        return f"Bishop({self.color=}, {self.location=})"
+        return f"Bishop('{self.color}', '{self.location}')"
 
     def can_move_to(self, location, board):
+        if self.location is None:
+            return False
         if not board.is_move_clear(self.location, location):
             return False
         move_distance = board.get_move_distance(self.location, location)
@@ -169,10 +190,12 @@ class Rook(Piece):
             return "♜"
 
     def __repr__(self):
-        return f"Rook({self.color=}, {self.location=})"
+        return f"Rook('{self.color}', '{self.location}')"
 
     def can_move_to(self, location, board):
-        if board.is_move_clear(self.location, location):
+        if self.location is None:
+            return False
+        if not board.is_move_clear(self.location, location):
             return False
         move_distance = board.get_move_distance(self.location, location)
         return move_distance[0] == 0 or move_distance[1] == 0
@@ -193,9 +216,11 @@ class Queen(Piece):
             return "♛"
 
     def __repr__(self):
-        return f"Queen({self.color=}, {self.location=})"
+        return f"Queen('{self.color}', '{self.location}')"
 
     def can_move_to(self, location, board):
+        if self.location is None:
+            return False
         if not board.is_move_clear(self.location, location):
             return False
         move_distance = board.get_move_distance(self.location, location)
@@ -214,7 +239,7 @@ class King(Piece):
             return "♚"
 
     def __repr__(self):
-        return f"King({self.color=}, {self.location=})"
+        return f"King('{self.color}', '{self.location}')"
 
     def move_effects(self, location: str, board):
         self.has_moved = True

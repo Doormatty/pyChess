@@ -1,7 +1,8 @@
+from copy import deepcopy
+
 import pytest
 
 from board import Board
-from gui import ChessSquare
 from pieces import Pawn, Knight, Bishop, Rook, Queen, King
 
 
@@ -19,7 +20,6 @@ def try_movements(start, movements, board):
     for destination in movements:
         board.active_player = color
         board.move(old_location, destination)
-        piece.move_effects(destination)
         # Check if the piece is indeed at the new location
         assert piece.location == destination
         assert board[destination] is piece
@@ -47,7 +47,7 @@ class TestChessGame:
 
     # Object Creation Tests
     def test_pawn_initialization(self, setup_board):
-        pawn = Pawn("white", "a2", setup_board)
+        pawn = Pawn("white", "a2")
         assert isinstance(pawn, Pawn) and pawn.color == "white" and pawn.location == "a2" and pawn.points == 1
 
     # Board Initialization Tests
@@ -120,7 +120,7 @@ class TestChessGame:
     # Test Bishop Movements
     def test_bishop_movement(self, setup_board):
         setup_board.clear()
-        bishop = Bishop("white", "c1", setup_board)
+        bishop = Bishop("white", "c1")
         setup_board['c1'] = bishop
         setup_board.move('c1', 'a3')
         assert bishop.location == "a3" and setup_board["a3"] is bishop
@@ -129,7 +129,7 @@ class TestChessGame:
     # Test Rook Movements
     def test_rook_movement(self, setup_board):
         setup_board.clear()
-        rook = Rook("white", "a1", setup_board)
+        rook = Rook("white", "a1")
         setup_board['a1'] = rook
         setup_board.move('a1', 'a4')
         assert rook.location == "a4" and setup_board["a4"] is rook
@@ -138,7 +138,7 @@ class TestChessGame:
     # Test Queen Movements
     def test_queen_movement(self, setup_board):
         setup_board.clear()
-        queen = Queen("white", "d1", setup_board)
+        queen = Queen("white", "d1")
         setup_board['d1'] = queen
         setup_board.move('d1', 'd3')
         assert queen.location == "d3" and setup_board["d3"] is queen
@@ -147,7 +147,7 @@ class TestChessGame:
     # Test King Movements
     def test_king_movement(self, setup_board):
         setup_board.clear()
-        king = King("white", "e1", setup_board)
+        king = King("white", "e1")
         setup_board['e1'] = king
         setup_board.move('e1', 'e2')
         assert king.location == "e2" and setup_board["e2"] is king
@@ -161,12 +161,13 @@ class TestChessGame:
             setup_board.move('a2', 'a9')
 
     # Capture Mechanics Tests
-    def test_capture_mechanics(self, setup_board):
-        setup_board.add_piece(piece=Pawn("black", location="b3", board=self))  # Setup a black pawn
-        black_pawn = setup_board['b3']
+    def test_basic_capture_mechanics(self, setup_board):
+        setup_board.add_piece(piece=Pawn("black", location="b3"))  # Setup a black pawn
         white_pawn = setup_board['a2']
         setup_board.move('a2', 'b3')  # White pawn captures black pawn
-        assert white_pawn.location == 'b3' and isinstance(setup_board.captured_pieces['black'][0], Pawn) and setup_board.captured_pieces['black'][0].color == "black"
+        assert white_pawn.location == 'b3', "The white pawn's location has not been updated"
+        assert isinstance(setup_board.captured_pieces['black'][0], Pawn)
+        assert setup_board.captured_pieces['black'][0].color == "black"
 
     def test_get_intermediate_squares(self):
         assert list(Board.get_intermediate_squares('a2', 'a5')) == ['a3', 'a4']
@@ -177,21 +178,21 @@ class TestChessGame:
 
     def test_extended_capture_mechanics(self, setup_board):
         # Setting up black and white pawns
-        setup_board.add_piece(Pawn("black", "b3", setup_board))
-        setup_board.add_piece(Pawn("black", "c3", setup_board))
-        setup_board.add_piece(Pawn("black", "d3", setup_board))
-        setup_board.add_piece(Pawn("black", "e3", setup_board))
+        setup_board.add_piece(Pawn("black", "b3"))
+        setup_board.add_piece(Pawn("black", "c3"))
+        setup_board.add_piece(Pawn("black", "d3"))
+        setup_board.add_piece(Pawn("black", "e3"))
 
         # Setting up other black pieces
-        setup_board.add_piece(Knight("black", "c6", setup_board))
-        setup_board.add_piece(Bishop("black", "f6", setup_board))
+        setup_board.add_piece(Knight("black", "c6"))
+        setup_board.add_piece(Bishop("black", "f6"))
 
         # White pawn captures black pawn
         white_pawn = setup_board['a2']
-        setup_board.move('a2','b3')
+        setup_board.move('a2', 'b3')
         assert white_pawn.location == 'b3' and isinstance(setup_board.captured_pieces['black'][0], Pawn) and setup_board.captured_pieces['black'][0].color == "black"
 
-        setup_board.move('h7','h6')
+        setup_board.move('h7', 'h6')
 
         # White pawn captures another black pawn
         pawn_b2 = setup_board['b2']
@@ -200,7 +201,7 @@ class TestChessGame:
         assert pawn_b2.location == 'c3' and isinstance(setup_board.captured_pieces['black'][1], Pawn) and setup_board.captured_pieces['black'][1].color == "black"
 
         # White knight capturing black pawn
-        setup_board.add_piece(Knight("white", "d5", setup_board))
+        setup_board.add_piece(Knight("white", "d5"))
         knight_d5 = setup_board['d5']
         setup_board.active_player = 'white'
         setup_board.move('d5', 'e3')
@@ -222,12 +223,32 @@ class TestChessGame:
         # Move white knight from g1 to f3
         make_move(setup_board, 'g1', 'f3')
 
+    def test_tempmove(self):
+        board = Board()
+        board.initialize_board()
+        original_board = deepcopy(board)
+        with Board.TempMove(board):
+            board.move("b2", "b4")
+            assert board['b4'] == Pawn('white', 'b4')
+            assert board['b2'] is None
 
-    @pytest.mark.parametrize("square,expected_index", [
-        ('a1', 0),
-        ('h8', 63),
-        ('e4', 28),
-        ('c6', 42),
-    ])
-    def test_square_to_index(self, square, expected_index):
-        assert ChessSquare.square_to_index(square) == expected_index
+            board.move("e7", "e5")
+            assert board['e5'] == Pawn('black', 'e5')
+            assert board['e7'] is None
+
+            board.move("g1", "f3")
+            assert board['f3'] == Knight('white', 'f3')
+            assert board['g1'] is None
+
+            # Bishop takes Pawn
+            board.move("f8", "b4")
+            assert board['b4'] == Bishop('black', 'b4')
+            assert board['f8'] is None
+
+            assert board.captured_pieces == {'white': [Pawn('white', None)], 'black': []}
+            assert len(board.pieces['white']) == 15
+
+        assert board['b2'] == Pawn('white', 'b2')
+        assert board['b4'] is None
+        assert board.captured_pieces == {'white': [], 'black': []}
+        assert len(board.pieces['white']) == 16
