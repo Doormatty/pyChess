@@ -31,7 +31,7 @@ def read_games(file_path):
                     game.append(line.strip())
 
 
-def run_games(filename):
+def run_games(filename, stop_on_fail = False):
     table = Table(title=filename)
 
     table.add_column("Game Name", justify="center", style="cyan", no_wrap=True)
@@ -42,9 +42,9 @@ def run_games(filename):
     for game in read_games(filename):
         pgnloader = PgnLoader()
         pgnloader.load_str(game)
-        print("\n")
-        print(pgnloader.vs_str)
-        print("===========================")
+        # print("\n")
+        # print(pgnloader.vs_str)
+        # print("===========================")
         try:
             pgnloader.play_game()
         except pgnloader.board.MoveException as e:
@@ -52,7 +52,8 @@ def run_games(filename):
             table.add_row(pgnloader.vs_str, "[bold red]FAIL[/bold red]")
             num_fail += 1
             failed_games.append(game)
-            break
+            if stop_on_fail:
+                break
         else:
             table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
             num_pass += 1
@@ -66,4 +67,4 @@ def run_games(filename):
             outfile.write(game + '\n')
 
 
-run_games("lichess_2013-01-example.pgn")
+run_games("lichess_2013-01.pgn")

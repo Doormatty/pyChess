@@ -59,7 +59,7 @@ class Board:
 
     _precomputed_square_names = [f'{letter}{number}' for letter in 'abcdefgh' for number in range(1, 9)]
 
-    def __init__(self, loglevel="INFO"):
+    def __init__(self, loglevel="ERROR"):
         """
         Initialize the chess board. Set up required variables and clear the board.
         """
@@ -172,6 +172,7 @@ class Board:
         if special in ("O-O", "O-O-O"):
             self.castle(special)
             self.moves.append(special)
+            self.enpassants = []
             return
 
         if end is None:
@@ -222,6 +223,7 @@ class Board:
             self[start] = None
             captured_piece.location = None
             piece.move_effects(end, self)
+            self.enpassants=[]
         else:
             # If we're here, it's because the move is not possible (we think)
             if self.squares[end] is None:
@@ -403,9 +405,9 @@ class Board:
         move = parsed_move['move']
         if move in ("O-O", "O-O-O"):
             if move == "O-O-O":
-                return f"Executed {self.active_player}: castles Queenside"
+                return f"{self.active_player.capitalize()}: castles Queenside"
             else:
-                return f"Executed {self.active_player}: castles Kingside"
+                return f"{self.active_player.capitalize()}: castles Kingside"
 
         if parsed_move['capture']:
             return f"{self.active_player.capitalize()}: {parsed_move['start_square']} to {parsed_move['end_square']}, {self.squares[parsed_move['start_square']].__class__.__name__} takes {self.squares[parsed_move['end_square']].__class__.__name__}"
@@ -455,12 +457,15 @@ class Board:
         with self.TempMove(self):
             self.move(start, end, override=True)
             is_check = self.is_king_in_check(self.active_player)
+            if is_check:
+                self.is_king_in_check(self.active_player)
             return is_check
 
     def is_king_in_check(self, player):
         king = [piece for piece in self.pieces[player] if piece.__class__.__name__ == 'King'][0]
         attackers = self.who_can_capture(king.location)
         if attackers:
+            self.logger.info(f"King's attackers found: {attackers}")
             return True
         return False
 
@@ -521,6 +526,7 @@ class Board:
         if len(possibles_after_self_check) - possible_count:
             self.logger.debug(f"Removed {len(possibles_after_self_check) - possible_count} possible moves due to self-check.")
         if not possibles_after_self_check:
+            self.does_move_cause_self_check(possible_copy[0].location, end_square)
             raise self.MoveException(self, f"No possibilities were found for {parsed_move['move']} after self-check check.")
 
         if len(possibles_after_self_check) > 1:

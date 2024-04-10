@@ -134,7 +134,7 @@ class Pawn(Piece):
         move_distance = board.get_move_distance(self.location, location)
         if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
             return True
-        if location in board.enpassants:
+        if location in board.enpassants and board[location].__class__.__name__ == "Pawn":
             return True
         return False
 

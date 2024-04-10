@@ -18,7 +18,7 @@ class PgnLoader:
         self.data = None
         self.tags = None
         self.moves = None
-        self.board = Board()
+        self.board = Board(loglevel='ERROR')
         self.board.initialize_board()
         self.original = None
 
@@ -33,7 +33,7 @@ class PgnLoader:
         self.data = None
         self.tags = None
         self.moves = None
-        self.board = Board()
+        self.board = Board(loglevel='ERROR')
         self.board.initialize_board()
 
     def load_file(self, filename):
