@@ -1,6 +1,3 @@
-from copy import deepcopy
-
-
 class Piece:
     class MoveException(Exception):
         pass
@@ -63,7 +60,7 @@ class Piece:
         return possible_moves
 
     def move_effects(self, location, board):
-        pass
+        board.enpassants = []
 
 
 class Pawn(Piece):
@@ -80,7 +77,9 @@ class Pawn(Piece):
     def __repr__(self):
         return f"Pawn('{self.color}', '{self.location}')"
 
-    def _enpassant_squares(self) -> tuple[str] | tuple[str, str]:
+    def _enpassant_squares(self) -> tuple[str] | tuple[str, str] | list:
+        if self.has_moved:
+            return []
         h = self.location[0]
         v = int(self.location[1])
         if self.color == "black":
@@ -89,26 +88,30 @@ class Pawn(Piece):
             elif h == "h":
                 return 'g6',
             else:
-                return f"{chr(ord(h) - 1)}{v + 1}", f"{chr(ord(h) + 1)}{v + 1}"
+                return f"{chr(ord(h) - 1)}{v - 1}", f"{chr(ord(h) + 1)}{v - 1}"
         else:
             if h == "a":
                 return 'b3',
             elif h == "h":
                 return 'g3',
             else:
-                return f"{chr(ord(h) - 1)}{v - 1}", f"{chr(ord(h) + 1)}{v - 1}"
+                return f"{chr(ord(h) - 1)}{v + 1}", f"{chr(ord(h) + 1)}{v + 1}"
 
     def move_effects(self, location: str, board):
         if self.location is None:
             return
-        self.has_moved = True
         board.halfmove_counter = 0
         possible_enpassants = []
-        for square in self._enpassant_squares():
-            if board[square] is not None and board[square].__class__.__name__ == "Pawn" and board[square].color == self.anticolor():
-                possible_enpassants.append(square)
-        if possible_enpassants:
-            board.enpassants = possible_enpassants
+        # for square in self._enpassant_squares():
+        #     if board[square] is not None and board[square].__class__.__name__ == "Pawn" and board[square].color == self.anticolor():
+        #         possible_enpassants.append(square)
+        # if possible_enpassants:
+        #     board.enpassants = possible_enpassants
+        if self.color == 'black':
+            board.enpassants = [f"{self.location[0]}{self.int_vert + 1}"]
+        else:
+            board.enpassants = [f"{self.location[0]}{self.int_vert - 1}"]
+        self.has_moved = True
 
     def can_move_to(self, location: str, board):
         if self.location is None:
@@ -127,9 +130,11 @@ class Pawn(Piece):
 
     def can_take(self, location: str, board):
         if self.location is None:
-            return False
+            raise self.MoveException("Can't move a piece that doesn't have a location")
         move_distance = board.get_move_distance(self.location, location)
         if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
+            return True
+        if location in board.enpassants:
             return True
         return False
 
