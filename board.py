@@ -432,7 +432,7 @@ class Board:
                         possibles = self.who_can_capture(location=end_square, piece_filter='Pawn', file_filter=start_square if len(start_square) == 1 and start_square.isalpha() else None, color_filter=self.active_player)
                         if len(possibles) != 1:
                             raise self.MoveException(self, "WE SHOULD NEVER GET HERE!")
-                        #print(f"WE CAN ENPASSANT - {possibles[0].location} can take {square_to_capture}")
+                        # print(f"WE CAN ENPASSANT - {possibles[0].location} can take {square_to_capture}")
                         return possibles[0].location, end_square, 'enpassant'
                     else:
                         raise self.MoveException(self, f"Move {parsed_move['move']} is illegal, cannot capture a non-existant piece; nothing at {end_square}")
@@ -623,7 +623,9 @@ class Board:
         # Add file labels at the bottom
         board_text.append("a b c d e f g h", style="bold")
 
-        return board_text    def validate_move(self, start, end, special):
+        return board_text
+
+    def validate_move(self, start, end, special):
         if end is None:
             raise self.MoveException(self, "Cannot move to nowhere. (end=None)")
         if self.squares[start] is None:
