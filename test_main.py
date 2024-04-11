@@ -38,6 +38,103 @@ def make_move(setup_board, source, destination, override=True):
 
 
 class TestChessGame:
+    # Edge Case Tests
+    def test_pawn_promotion(self, setup_board):
+        # Move white pawn to the last rank
+        setup_board.active_player = 'white'
+        setup_board.move('a2', 'a7')
+        setup_board.move('a7', 'a8')
+        # Ensure pawn is promoted to a queen by default
+        assert isinstance(setup_board['a8'], Queen)
+        assert setup_board['a8'].color == 'white'
+
+    def test_en_passant_capture(self, setup_board):
+        # Simulate the conditions for en passant
+        setup_board.active_player = 'white'
+        setup_board.move('e2', 'e5')
+        setup_board.active_player = 'black'
+        setup_board.move('d7', 'd5')
+        # Perform en passant capture
+        setup_board.active_player = 'white'
+        setup_board.move('e5', 'd6')
+        assert setup_board['d6'] == Pawn('white', 'd6')
+        assert setup_board['d5'] is None
+        assert isinstance(setup_board.captured_pieces['black'][-1], Pawn)
+
+    def test_castling(self, setup_board):
+        # Clear the path for castling
+        setup_board['f1'] = None
+        setup_board['g1'] = None
+        # Perform kingside castling
+        setup_board.active_player = 'white'
+        setup_board.move('e1', 'g1')
+        assert isinstance(setup_board['g1'], King)
+        assert isinstance(setup_board['f1'], Rook)
+        # Perform queenside castling
+        setup_board['d1'] = None
+        setup_board['c1'] = None
+        setup_board['b1'] = None
+        setup_board.active_player = 'white'
+        setup_board.move('e1', 'c1')
+        assert isinstance(setup_board['c1'], King)
+        assert isinstance(setup_board['d1'], Rook)
+
+    def test_checkmate_detection(self, setup_board):
+        # Setup a simple checkmate position
+        setup_board.clear()
+        setup_board.add_piece(King("black", "a8"))
+        setup_board.add_piece(Queen("white", "b6"))
+        setup_board.add_piece(King("white", "c6"))
+        setup_board.active_player = 'black'
+        with pytest.raises(Board.MoveException) as excinfo:
+            setup_board.move('a8', 'a7')  # Black king is in checkmate
+        assert 'checkmate' in str(excinfo.value).lower()
+
+    def test_stalemate_detection(self, setup_board):
+        # Setup a simple stalemate position
+        setup_board.clear()
+        setup_board.add_piece(King("black", "a8"))
+        setup_board.add_piece(Queen("white", "c7"))
+        setup_board.add_piece(King("white", "c6"))
+        setup_board.active_player = 'black'
+        with pytest.raises(Board.MoveException) as excinfo:
+            setup_board.move('a8', 'a7')  # Black king has no legal moves but is not in check
+        assert 'stalemate' in str(excinfo.value).lower()
+
+    def test_threefold_repetition(self, setup_board):
+        # Repeat the same position three times
+        setup_board.active_player = 'white'
+        setup_board.move('b1', 'c3')
+        setup_board.active_player = 'black'
+        setup_board.move('b8', 'c6')
+        setup_board.active_player = 'white'
+        setup_board.move('c3', 'b1')
+        setup_board.active_player = 'black'
+        setup_board.move('c6', 'b8')
+        setup_board.active_player = 'white'
+        setup_board.move('b1', 'c3')
+        setup_board.active_player = 'black'
+        setup_board.move('b8', 'c6')
+        setup_board.active_player = 'white'
+        setup_board.move('c3', 'b1')
+        setup_board.active_player = 'black'
+        setup_board.move('c6', 'b8')
+        # The position has been repeated three times
+        assert setup_board.is_threefold_repetition()
+
+    def test_fifty_move_rule(self, setup_board):
+        # Make 50 moves without any pawn movement or capture
+        for _ in range(25):
+            setup_board.active_player = 'white'
+            setup_board.move('b1', 'c3')
+            setup_board.active_player = 'black'
+            setup_board.move('b8', 'c6')
+            setup_board.active_player = 'white'
+            setup_board.move('c3', 'b1')
+            setup_board.active_player = 'black'
+            setup_board.move('c6', 'b8')
+        # The 50-move rule should now be in effect
+        assert setup_board.is_fifty_move_rule()
 
     @pytest.fixture
     def setup_board(self):
