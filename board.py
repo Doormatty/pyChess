@@ -157,88 +157,14 @@ class Board:
         self[end] = piece
 
     def move(self, start=None, end=None, special=None, override=False):
-        """
-        Move a piece from start square to end square if valid.
-
-        Parameters:
-        start (str): A string in chess notation representing the start square. For example, 'd5'.
-        end (str): A string in chess notation representing the end square. For example, 'e7'.
-
-        Raises:
-        MoveException: If the move is not valid due to reasons like moving opponent's pieces, illegal move path,
-        casting check on own king etc.
-        """
-        # Check for Castling
+        self.validate_move(start, end, special)
         if special in ("O-O", "O-O-O"):
-            self.castle(special)
-            self.moves.append(special)
-            self.enpassants = []
-            if self.active_player == 'white':
-                self.turn_number += 1
-            return
-
-        if end is None:
-            raise self.MoveException(self, f"Cannot move to nowhere. (end=None)")
-        if self.squares[start] is None:
-            raise self.MoveException(self, f"Cannot move from an empty square.")
-        piece = self.squares[start]
-        if piece.color != self.active_player:
-            raise self.MoveException(self, f"It's {self.active_player}'s move, you cannot move {piece.color} pieces.")
-        if not override:
-            if not self.is_move_clear(start, end):
-                raise self.MoveException(self, f"Cannot move {piece.location} through squares occupied by another piece.")
-        if not self._boundry_check(end):
-            raise self.MoveException(self, f"Move of {piece.color} {self.__class__.__name__} from {piece.location} to {end} is an illegal move due to {end} being out of bounds.")
-
-        if not piece.can_move_to(end, self) and special == "enpassant":
-            self._force_move(piece.location, end)
-            capture = int(end[1])
-            if self.active_player == 'white':
-                capture -= 1
-            else:
-                capture += 1
-            square_to_capture = f'{end[0]}{capture}'
-            captured_piece = deepcopy(self[square_to_capture])
-            self[square_to_capture] = None
-            self.captured_pieces[captured_piece.color].append(captured_piece)
-            self[end].move_effects(end, self)
-
-        elif piece.can_move_to(end, self) and self.squares[end] is None and special is None:
-            # We are only moving, and not capturing
-            self._force_move(start, end)
-            self[end].move_effects(end, self)
-
-        elif piece.can_take(end, self) and self.squares[end] is not None:
-            # We are moving and capturing!
-            if self.squares[end].color == piece.color:
-                raise self.MoveException(self, f"The {piece.color} {piece.__class__.__name__} cannot capture a {piece.color} {self.squares[end].__class__.__name__} (same color).")
-            else:
-                captured_piece = self.squares[end]
-            # Remove the captured piece's location, add it to the captured list
-            self.captured_pieces[captured_piece.color].append(captured_piece)
-            # Remove the captured piece from the list
-            self.pieces[piece.anticolor()].remove(captured_piece)
-
-            # Set the piece's position to where the captured piece was
-            self.squares[end] = piece
-            piece.location = end
-            self[start] = None
-            captured_piece.location = None
-            piece.move_effects(end, self)
-            self.enpassants=[]
+            self.handle_castling(special)
+        elif special == "enpassant":
+            self.handle_enpassant(start, end)
         else:
-            # If we're here, it's because the move is not possible (we think)
-            if self.squares[end] is None:
-                raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {end} is an illegal move, as that piece cannot move to {end}")
-            else:
-                raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {end} is an illegal move, as that piece cannot capture the piece at {end}")
-        self.moves.append(f"{start} {end}")
-        # Unless override was set, flip the active player
-        if not override:
-            self.active_player = "black" if self.active_player == "white" else "white"
-        self.check_for_checkmate()
-        if self.active_player == "white":
-            self.turn_number += 1
+            self.handle_standard_move(start, end)
+        self.finalize_move(start, end, special, override)
 
     def iter_square_names(self) -> Iterator[str]:
         """
@@ -697,4 +623,70 @@ class Board:
         # Add file labels at the bottom
         board_text.append("a b c d e f g h", style="bold")
 
-        return board_text
+        return board_text    def validate_move(self, start, end, special):
+        if end is None:
+            raise self.MoveException(self, "Cannot move to nowhere. (end=None)")
+        if self.squares[start] is None:
+            raise self.MoveException(self, "Cannot move from an empty square.")
+        piece = self.squares[start]
+        if piece.color != self.active_player:
+            raise self.MoveException(self, f"It's {self.active_player}'s move, you cannot move {piece.color} pieces.")
+        if not self._boundry_check(end):
+            raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {end} is an illegal move due to {end} being out of bounds.")
+
+    def handle_castling(self, special):
+        self.castle(special)
+        self.moves.append(special)
+        self.enpassants = []
+        if self.active_player == 'white':
+            self.turn_number += 1
+
+    def handle_enpassant(self, start, end):
+        piece = self.squares[start]
+        self._force_move(piece.location, end)
+        capture_rank = '6' if self.active_player == 'white' else '3'
+        square_to_capture = f'{end[0]}{capture_rank}'
+        captured_piece = deepcopy(self[square_to_capture])
+        self[square_to_capture] = None
+        self.captured_pieces[captured_piece.color].append(captured_piece)
+        self[end].move_effects(end, self)
+
+    def handle_standard_move(self, start, end):
+        piece = self.squares[start]
+        if not self.is_move_clear(start, end):
+            raise self.MoveException(self, f"Cannot move {piece.location} through squares occupied by another piece.")
+        if piece.can_move_to(end, self) and self.squares[end] is None:
+            self._force_move(start, end)
+            self[end].move_effects(end, self)
+        elif piece.can_take(end, self) and self.squares[end] is not None:
+            self.handle_capture(start, end)
+        else:
+            self.handle_illegal_move(piece, end)
+
+    def handle_capture(self, start, end):
+        piece = self.squares[start]
+        captured_piece = self.squares[end]
+        if captured_piece.color == piece.color:
+            raise self.MoveException(self, f"The {piece.color} {piece.__class__.__name__} cannot capture a {piece.color} {self.squares[end].__class__.__name__} (same color).")
+        self.captured_pieces[captured_piece.color].append(captured_piece)
+        self.pieces[piece.anticolor()].remove(captured_piece)
+        self.squares[end] = piece
+        piece.location = end
+        self[start] = None
+        captured_piece.location = None
+        piece.move_effects(end, self)
+        self.enpassants = []
+
+    def handle_illegal_move(self, piece, end):
+        if self.squares[end] is None:
+            raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {end} is an illegal move, as that piece cannot move to {end}")
+        else:
+            raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {end} is an illegal move, as that piece cannot capture the piece at {end}")
+
+    def finalize_move(self, start, end, special, override):
+        self.moves.append(f"{start} {end}")
+        if not override:
+            self.active_player = "black" if self.active_player == "white" else "white"
+        self.check_for_checkmate()
+        if self.active_player == "white":
+            self.turn_number += 1
