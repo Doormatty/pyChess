@@ -400,71 +400,61 @@ class Board:
         return False
 
     def expand_move(self, parsed_move) -> tuple[str, str | None] | tuple[str, str | None, str]:
-        """ Take an unambiguous move like 'd5' and turn it into a tuple of (start_square, end_square), based on the current board state. """
+        """ Simplify the logic of expanding a move based on the current board state. """
         if parsed_move['king_castle'] or parsed_move['queen_castle']:
-            return parsed_move, None
+            return self.handle_castling_in_expand_move(parsed_move)
 
-        start_square = parsed_move['start_square']
-        end_square = parsed_move['end_square']
-        piece_filter = parsed_move['start_type'].__qualname__
-        if piece_filter == 'King' and start_square is None:
-            # make start square the location of the active player's king
-            king = [piece for piece in self.pieces[self.active_player] if piece.__class__.__name__ == 'King'][0]
-            start_square = king.location
-
-        if start_square and len(start_square) == 2 and end_square and len(end_square) == 2:
-            return start_square, end_square
-
-        if start_square is None or end_square is None:
-            location = start_square or end_square
-            possibles = self.who_can_move_to(location=location, piece_filter=piece_filter)
-        else:
-            if parsed_move['capture']:
-                if self.squares[end_square] is None:
-                    # Enpassant?
-                    if end_square in self.enpassants and piece_filter == 'Pawn':
-                        capture = int(end_square[1])
-                        if self.active_player == 'white':
-                            capture -= 1
-                        else:
-                            capture += 1
-                        square_to_capture = f'{end_square[0]}{capture}'
-                        possibles = self.who_can_capture(location=end_square, piece_filter='Pawn', file_filter=start_square if len(start_square) == 1 and start_square.isalpha() else None, color_filter=self.active_player)
-                        if len(possibles) != 1:
-                            raise self.MoveException(self, "WE SHOULD NEVER GET HERE!")
-                        # print(f"WE CAN ENPASSANT - {possibles[0].location} can take {square_to_capture}")
-                        return possibles[0].location, end_square, 'enpassant'
-                    else:
-                        raise self.MoveException(self, f"Move {parsed_move['move']} is illegal, cannot capture a non-existant piece; nothing at {end_square}")
-                else:
-                    possibles = self.who_can_capture(location=end_square, piece_filter=piece_filter, file_filter=start_square if len(start_square) == 1 and start_square.isalpha() else None, color_filter=self.antiplayer)
-            else:
-                possibles = self.who_can_move_to(location=end_square, piece_filter=piece_filter, file_filter=start_square if len(start_square) == 1 and start_square.isalpha() else None)
-
-        if not possibles:
-            raise self.MoveException(self, f"Attempted move {parsed_move['move']} by {self.active_player}\nNo possibilities were found for {parsed_move['move']} even before self-check detection!")
-
-        possible_count = len(possibles)
-        possibles_after_self_check = []
-        possible_copy = deepcopy(possibles)
-        for possible in possible_copy:
-            if not self.does_move_cause_self_check(possible.location, end_square):
-                possibles_after_self_check.append(possible)
-                # self.logger.debug(f"Move {possible.location} -> {end_square} successfully passed King check...check.")
-            else:
-                self.logger.debug(f"Excluded move {possible.location} -> {end_square} as it would put your King in check.")
-        if len(possibles_after_self_check) - possible_count:
-            self.logger.debug(f"Removed {len(possibles_after_self_check) - possible_count} possible moves due to self-check.")
-        if not possibles_after_self_check:
-            self.does_move_cause_self_check(possible_copy[0].location, end_square)
-            raise self.MoveException(self, f"No possibilities were found for {parsed_move['move']} after self-check check.")
+        start_square, end_square = self.determine_start_and_end_squares(parsed_move)
+        possibles = self.find_possible_moves(parsed_move, start_square, end_square)
+        possibles_after_self_check = self.filter_moves_causing_self_check(possibles, end_square)
 
         if len(possibles_after_self_check) > 1:
-            raise self.MoveException(self, f"{self.active_player}'s move {parsed_move['move']} is inadequately described - {len(possibles_after_self_check)} possibilities {possibles_after_self_check} were found")
+            raise self.MoveException(self, f"Ambiguous move: {parsed_move['move']} could refer to multiple pieces.")
 
-        start_square = possibles_after_self_check[0].location
-        self.logger.debug(f"Expanded {parsed_move['move']} into {start_square} --> {end_square}")
+        return possibles_after_self_check[0].location, end_square
+
+    def handle_castling_in_expand_move(self, parsed_move):
+        return parsed_move, None
+
+    def determine_start_and_end_squares(self, parsed_move):
+        start_square = parsed_move['start_square']
+        end_square = parsed_move['end_square']
+        if parsed_move['start_type'].__qualname__ == 'King' and start_square is None:
+            start_square = self.find_king_location(self.active_player)
         return start_square, end_square
+
+    def find_possible_moves(self, parsed_move, start_square, end_square):
+        if parsed_move['capture']:
+            return self.find_possible_captures(parsed_move, start_square, end_square)
+        else:
+            return self.find_possible_non_captures(parsed_move, start_square, end_square)
+
+    def filter_moves_causing_self_check(self, possibles, end_square):
+        return [p for p in possibles if not self.does_move_cause_self_check(p.location, end_square)]
+
+    def find_possible_captures(self, parsed_move, start_square, end_square):
+        if self.is_enpassant(parsed_move, end_square):
+            return self.handle_enpassant_possibility(parsed_move, start_square, end_square)
+        elif self.squares[end_square] is None:
+            raise self.MoveException(self, f"Illegal capture: no piece at {end_square}.")
+        return self.who_can_capture(end_square, parsed_move['start_type'].__qualname__, start_square[0] if start_square else None, self.antiplayer)
+
+    def find_possible_non_captures(self, parsed_move, start_square, end_square):
+        return self.who_can_move_to(end_square, self.active_player, parsed_move['start_type'].__qualname__, start_square[0] if start_square else None)
+
+    def is_enpassant(self, parsed_move, end_square):
+        return end_square in self.enpassants and parsed_move['start_type'].__qualname__ == 'Pawn' and self.squares[end_square] is None
+
+    def handle_enpassant_possibility(self, parsed_move, start_square, end_square):
+        capture_rank = '6' if self.active_player == 'white' else '3'
+        square_to_capture = f'{end_square[0]}{capture_rank}'
+        possibles = self.who_can_capture(end_square, 'Pawn', start_square[0] if start_square else None, self.active_player)
+        if len(possibles) != 1:
+            raise self.MoveException(self, "En passant capture ambiguity.")
+        return possibles
+
+    def find_king_location(self, player_color):
+        return next(piece.location for piece in self.pieces[player_color] if isinstance(piece, King))
 
     @staticmethod
     def _boundry_check(location: str) -> bool:
