@@ -1,5 +1,6 @@
 import re
 
+import pieces
 from board import Board
 
 
@@ -68,18 +69,23 @@ class PgnLoader:
             yield move
 
     def play_game(self):
+        state = None
         played_moves = []
         for move in self.moves:
-            self.board.compact_move(move)
-
-
-        if self.tags['result'] == '1/2-1/2' and not self.board.check_for_checkmate():
-            pass
-            # print("Game ends in Draw")
-
-
-# Extracting the moves using the updated function
-
+            try:
+                self.board.compact_move(move)
+            except (PgnLoader.PgnLoaderException, Board.MoveException, pieces.Piece.MoveException) as e:
+                state = e
+                break
+            else:
+                played_moves.append(move)
+        if state is not None:
+            return state, played_moves
+        else:
+            if self.tags['result'] == '1/2-1/2' and not self.board.check_for_checkmate():
+                return "draw", played_moves
+            else:
+                return "end", played_moves
 
 if __name__ == '__main__':
     loader = PgnLoader()

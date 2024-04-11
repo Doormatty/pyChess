@@ -1,6 +1,6 @@
 from rich.console import Console
 from rich.table import Table
-
+from rich.text import Text
 from pgnload import PgnLoader
 
 
@@ -31,8 +31,8 @@ def read_games(file_path):
                     game.append(line.strip())
 
 
-def run_games(filename, stop_on_fail = False):
-    table = Table(title=filename)
+def run_games(filename, stop_on_fail=False, detail=False):
+    table = Table(title=filename, show_lines=True)
 
     table.add_column("Game Name", justify="center", style="cyan", no_wrap=True)
     table.add_column("Result", justify="center", style="green")
@@ -42,21 +42,23 @@ def run_games(filename, stop_on_fail = False):
     for game in read_games(filename):
         pgnloader = PgnLoader()
         pgnloader.load_str(game)
-        # print("\n")
-        # print(pgnloader.vs_str)
-        # print("===========================")
-        try:
-            pgnloader.play_game()
-        except pgnloader.board.MoveException as e:
-            e.rich_exception()
-            table.add_row(pgnloader.vs_str, "[bold red]FAIL[/bold red]")
+        result = pgnloader.play_game()
+        if result[0] in (None, 'draw', 'end'):
+            table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
+            num_pass += 1
+        else:
+            cell_text = Text("FAIL\n", style="bold red")
+            cell_text.append_text(Text(f"Turn #{result[0].args[0].turn_number}\n", style='yellow'))
+            cell_text.append_text(Text(result[0].args[1], style='cyan'))
+            cell_text.append_text(Text("\n", style='bright white'))
+            cell_text.append_text(result[0].args[0].create_board_text())
+            cell_text.append_text(Text(f"\n{pgnloader.tags['site']}", style='bright white'))
+            table.add_row(pgnloader.vs_str, cell_text)
             num_fail += 1
             failed_games.append(game)
             if stop_on_fail:
                 break
-        else:
-            table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
-            num_pass += 1
+
     table.title = f"{filename}\n{(num_pass / (num_pass + num_fail)) * 100:.2f}%"
     console = Console()
     console.print(table)
@@ -67,4 +69,4 @@ def run_games(filename, stop_on_fail = False):
             outfile.write(game + '\n')
 
 
-run_games("lichess_2013-01.pgn")
+run_games("lichess_2013-01-example-failed.pgn")

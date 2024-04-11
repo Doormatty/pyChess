@@ -130,7 +130,7 @@ class Pawn(Piece):
 
     def can_take(self, location: str, board):
         if self.location is None:
-            raise self.MoveException("Can't move a piece that doesn't have a location")
+            raise self.MoveException("Why are we trying to take a piece that doesn't have a location?")
         move_distance = board.get_move_distance(self.location, location)
         if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
             return True

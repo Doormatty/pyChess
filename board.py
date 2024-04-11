@@ -173,6 +173,8 @@ class Board:
             self.castle(special)
             self.moves.append(special)
             self.enpassants = []
+            if self.active_player == 'white':
+                self.turn_number += 1
             return
 
         if end is None:
@@ -235,6 +237,8 @@ class Board:
         if not override:
             self.active_player = "black" if self.active_player == "white" else "white"
         self.check_for_checkmate()
+        if self.active_player == "white":
+            self.turn_number += 1
 
     def iter_square_names(self) -> Iterator[str]:
         """
@@ -502,7 +506,7 @@ class Board:
                         possibles = self.who_can_capture(location=end_square, piece_filter='Pawn', file_filter=start_square if len(start_square) == 1 and start_square.isalpha() else None, color_filter=self.active_player)
                         if len(possibles) != 1:
                             raise self.MoveException(self, "WE SHOULD NEVER GET HERE!")
-                        print(f"WE CAN ENPASSANT - {possibles[0].location} can take {square_to_capture}")
+                        #print(f"WE CAN ENPASSANT - {possibles[0].location} can take {square_to_capture}")
                         return possibles[0].location, end_square, 'enpassant'
                     else:
                         raise self.MoveException(self, f"Move {parsed_move['move']} is illegal, cannot capture a non-existant piece; nothing at {end_square}")
@@ -660,11 +664,11 @@ class Board:
             highlights = [highlights]
 
         # Add file labels at the top
-        board_text = Text("  a b c d e f g h\n", style="bold")
+        board_text = Text("a b c d e f g h\n", style="bold white")
 
         for number in range(8, 0, -1):
             # Add rank label at the start of each line
-            board_text.append(f"{number} ", style="bold")
+            board_text.append(f"{number} ", style="bold white")
 
             for letter in "abcdefgh":
                 square = f'{letter}{number}'
@@ -691,6 +695,6 @@ class Board:
             board_text.append(f" {number}\n", style="bold")
 
         # Add file labels at the bottom
-        board_text.append("  a b c d e f g h", style="bold")
+        board_text.append("a b c d e f g h", style="bold")
 
         return board_text
