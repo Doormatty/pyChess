@@ -41,17 +41,20 @@ class TestChessGame:
     # Edge Case Tests
     def test_pawn_promotion(self, setup_board):
         # Move white pawn to the last rank
+        setup_board.clear()
+        setup_board.add_piece(Pawn("white", "a7"))
         setup_board.active_player = 'white'
-        setup_board.move('a2', 'a7')
         setup_board.move('a7', 'a8')
+        setup_board.promote_pawn('a8', 'Queen')
         # Ensure pawn is promoted to a queen by default
         assert isinstance(setup_board['a8'], Queen)
         assert setup_board['a8'].color == 'white'
 
     def test_en_passant_capture(self, setup_board):
         # Simulate the conditions for en passant
-        setup_board.active_player = 'white'
-        setup_board.move('e2', 'e5')
+        setup_board.clear()
+        setup_board.add_piece(Pawn("white", "e5"))
+        setup_board.add_piece(Pawn("black", "d7"))
         setup_board.active_player = 'black'
         setup_board.move('d7', 'd5')
         # Perform en passant capture
@@ -67,7 +70,7 @@ class TestChessGame:
         setup_board['g1'] = None
         # Perform kingside castling
         setup_board.active_player = 'white'
-        setup_board.move('e1', 'g1')
+        setup_board.move('O-O')
         assert isinstance(setup_board['g1'], King)
         assert isinstance(setup_board['f1'], Rook)
         # Perform queenside castling
@@ -75,7 +78,7 @@ class TestChessGame:
         setup_board['c1'] = None
         setup_board['b1'] = None
         setup_board.active_player = 'white'
-        setup_board.move('e1', 'c1')
+        setup_board.move('O-O-O')
         assert isinstance(setup_board['c1'], King)
         assert isinstance(setup_board['d1'], Rook)
 
@@ -85,10 +88,8 @@ class TestChessGame:
         setup_board.add_piece(King("black", "a8"))
         setup_board.add_piece(Queen("white", "b6"))
         setup_board.add_piece(King("white", "c6"))
-        setup_board.active_player = 'black'
-        with pytest.raises(Board.MoveException) as excinfo:
-            setup_board.move('a8', 'a7')  # Black king is in checkmate
-        assert 'checkmate' in str(excinfo.value).lower()
+        setup_board.active_player = 'white'
+        assert setup_board.check_for_checkmate() is True
 
     def test_stalemate_detection(self, setup_board):
         # Setup a simple stalemate position

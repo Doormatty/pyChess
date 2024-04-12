@@ -50,7 +50,10 @@ class Piece:
         raise NotImplementedError
 
     def can_take(self, location: str, board) -> bool:
-        return self.can_move_to(location, board) and board[location] is not None and board[location].color == self.anticolor()
+        result = self.can_move_to(location, board)
+
+        # and board[location] is not None and board[location].color == self.anticolor())
+        return result
 
     def get_all_possible_moves(self, board) -> list[str]:
         possible_moves = []
@@ -229,7 +232,8 @@ class Queen(Piece):
         if not board.is_move_clear(self.location, location):
             return False
         move_distance = board.get_move_distance(self.location, location)
-        return abs(move_distance[0]) == abs(move_distance[1]) or (move_distance[0] == 0 or move_distance[1] == 0)
+        result = abs(move_distance[0]) == abs(move_distance[1]) or (move_distance[0] == 0 or move_distance[1] == 0)
+        return result
 
 
 class King(Piece):
@@ -250,19 +254,16 @@ class King(Piece):
         self.has_moved = True
 
     def is_checkmate(self, board):
-        all_adjacent_squares_blocked = True
         for y in (-1, 0, 1):
             for x in (-1, 0, 1):
                 if x == 0 and y == 0:  # Skip the square where the king currently is
                     continue
                 target_square = f"{chr(ord(self.location[0]) + x)}{(int(self.location[1]) + y)}"
-                if not board._boundry_check(target_square):
+                if not board.is_valid_square_name(target_square):
                     continue
                 if self.can_move_to(target_square, board):
                     return False
-                elif board[target_square] is None or board[target_square].color != self.color:
-                    all_adjacent_squares_blocked = False
-        return all_adjacent_squares_blocked
+        return True
 
     def can_move_to(self, location, board):
         move_distance = board.get_move_distance(self.location, location)
@@ -270,9 +271,9 @@ class King(Piece):
             return False
         if location is None:
             raise ValueError("Location cannot be None")
+
         for piece in board.pieces[self.anticolor()]:
-            if isinstance(piece, King):
-                continue
             if piece.can_take(location, board):
+                print(f"{piece} can take {location}")
                 return False
         return True

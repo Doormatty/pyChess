@@ -156,14 +156,23 @@ class Board:
         self[start] = None
         self[end] = piece
 
+    def determine_move_type(self, start, end=None):
+        if start in ("O-O", "O-O-O"):
+            return start
+        if abs(int(start[1])-int(end[1]))==1 and self[end] is None and end in self.enpassants and self[start].__class__.__name__ == "Pawn":
+            return "enpassant"
+        return None
+
     def move(self, start=None, end=None, special=None, override=False):
-        self.validate_move(start, end, special)
-        if special in ("O-O", "O-O-O"):
+        self.validate_move(start, end)
+        if special is None:
+            special = self.determine_move_type(start,end)
+        if special is None:
+            self.handle_standard_move(start, end)
+        elif special in ("O-O", "O-O-O"):
             self.handle_castling(special)
         elif special == "enpassant":
             self.handle_enpassant(start, end)
-        else:
-            self.handle_standard_move(start, end)
         self.finalize_move(start, end, special, override)
 
     def iter_square_names(self) -> Iterator[str]:
@@ -175,23 +184,19 @@ class Board:
         """
         return iter(self._precomputed_square_names)
 
-    @staticmethod
-    def iter_rev_square_names() -> Iterator[str]:
-        """
-        Iterate over all squares of the board from right to left and bottom to top.
-
-        Yields:
-        str: The square in chess notation, for example, 'h8', 'h7'...'a1'.
-        """
-        for letter in "hgfedcba":
-            for number in range(8, 0, -1):
-                yield f'{letter}{number}'
-
     def clear(self):
         """
         Clear the board.
         """
         self.squares = defaultdict(lambda: None)
+        self.pieces = {"white": [], "black": []}
+        self.captured_pieces = {"white": [], "black": []}
+        self.turn_number = 0
+        self.moves = []
+        self.halfmove_counter = 0
+        self.enpassants = []
+        self.castling = []
+        self.active_player = "white"
 
     @staticmethod
     def get_square_color(square: str) -> str:
@@ -400,21 +405,17 @@ class Board:
         return False
 
     def expand_move(self, parsed_move) -> tuple[str, str | None] | tuple[str, str | None, str]:
-        """ Simplify the logic of expanding a move based on the current board state. """
         if parsed_move['king_castle'] or parsed_move['queen_castle']:
-            return self.handle_castling_in_expand_move(parsed_move)
+            return parsed_move, None
 
         start_square, end_square = self.determine_start_and_end_squares(parsed_move)
         possibles = self.find_possible_moves(parsed_move, start_square, end_square)
-        possibles_after_self_check = self.filter_moves_causing_self_check(possibles, end_square)
+        possibles_after_self_check = [p for p in possibles if not self.does_move_cause_self_check(p.location, end_square)]
 
         if len(possibles_after_self_check) > 1:
             raise self.MoveException(self, f"Ambiguous move: {parsed_move['move']} could refer to multiple pieces.")
 
         return possibles_after_self_check[0].location, end_square
-
-    def handle_castling_in_expand_move(self, parsed_move):
-        return parsed_move, None
 
     def determine_start_and_end_squares(self, parsed_move):
         start_square = parsed_move['start_square']
@@ -427,23 +428,14 @@ class Board:
         if parsed_move['capture']:
             return self.find_possible_captures(parsed_move, start_square, end_square)
         else:
-            return self.find_possible_non_captures(parsed_move, start_square, end_square)
-
-    def filter_moves_causing_self_check(self, possibles, end_square):
-        return [p for p in possibles if not self.does_move_cause_self_check(p.location, end_square)]
+            return self.who_can_move_to(end_square, self.active_player, parsed_move['start_type'].__qualname__, start_square[0] if start_square else None)
 
     def find_possible_captures(self, parsed_move, start_square, end_square):
-        if self.is_enpassant(parsed_move, end_square):
+        if end_square in self.enpassants and parsed_move['start_type'].__qualname__ == 'Pawn' and self.squares[end_square] is None:
             return self.handle_enpassant_possibility(parsed_move, start_square, end_square)
         elif self.squares[end_square] is None:
             raise self.MoveException(self, f"Illegal capture: no piece at {end_square}.")
         return self.who_can_capture(end_square, parsed_move['start_type'].__qualname__, start_square[0] if start_square else None, self.antiplayer)
-
-    def find_possible_non_captures(self, parsed_move, start_square, end_square):
-        return self.who_can_move_to(end_square, self.active_player, parsed_move['start_type'].__qualname__, start_square[0] if start_square else None)
-
-    def is_enpassant(self, parsed_move, end_square):
-        return end_square in self.enpassants and parsed_move['start_type'].__qualname__ == 'Pawn' and self.squares[end_square] is None
 
     def handle_enpassant_possibility(self, parsed_move, start_square, end_square):
         capture_rank = '6' if self.active_player == 'white' else '3'
@@ -457,7 +449,7 @@ class Board:
         return next(piece.location for piece in self.pieces[player_color] if isinstance(piece, King))
 
     @staticmethod
-    def _boundry_check(location: str) -> bool:
+    def is_valid_square_name(location: str) -> bool:
         """
         Check if the denoted location is within the boundaries of the chess board.
 
@@ -555,8 +547,6 @@ class Board:
         target = self.squares[location]
         if target is not None:
             color_filter = target.anticolor()
-        # if color_filter is None:
-        #     print(1)
         for piece in self.pieces[color_filter]:
             if piece_filter is not None and piece.__class__.__name__ != piece_filter:
                 continue
@@ -567,10 +557,14 @@ class Board:
         return deepcopy(pieces)
 
     def check_for_checkmate(self):
-        oppoenent_pieces = self.pieces["black" if self.active_player == "white" else "white"]
-        opponent_king = [x for x in oppoenent_pieces if isinstance(x, King)][0]
-        if opponent_king.is_checkmate(self):
-            print("!!!!CHECKMATE!!!!")
+        try:
+            opponent_king = [x for x in self.pieces[self.antiplayer] if isinstance(x, King)][0]
+        except IndexError:
+            return False
+        else:
+            if opponent_king.is_checkmate(self):
+                return True
+        return False
 
     def print(self, highlights: str | list[str] | None = None) -> None:
         self.console.print(self.create_board_text(highlights))
@@ -615,7 +609,7 @@ class Board:
 
         return board_text
 
-    def validate_move(self, start, end, special):
+    def validate_move(self, start, end):
         if end is None:
             raise self.MoveException(self, "Cannot move to nowhere. (end=None)")
         if self.squares[start] is None:
@@ -623,7 +617,7 @@ class Board:
         piece = self.squares[start]
         if piece.color != self.active_player:
             raise self.MoveException(self, f"It's {self.active_player}'s move, you cannot move {piece.color} pieces.")
-        if not self._boundry_check(end):
+        if not self.is_valid_square_name(end):
             raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {end} is an illegal move due to {end} being out of bounds.")
 
     def handle_castling(self, special):
@@ -634,12 +628,11 @@ class Board:
             self.turn_number += 1
 
     def handle_enpassant(self, start, end):
-        piece = self.squares[start]
-        self._force_move(piece.location, end)
-        capture_rank = '6' if self.active_player == 'white' else '3'
+        capture_rank = '5' if self.active_player == 'white' else '4'
         square_to_capture = f'{end[0]}{capture_rank}'
         captured_piece = deepcopy(self[square_to_capture])
         self[square_to_capture] = None
+        self._force_move(start, end)
         self.captured_pieces[captured_piece.color].append(captured_piece)
         self[end].move_effects(end, self)
 
@@ -682,3 +675,16 @@ class Board:
         self.check_for_checkmate()
         if self.active_player == "white":
             self.turn_number += 1
+
+    def promote_pawn(self, location, new_type):
+        piece = self[location]
+        if piece is None or not isinstance(piece, Pawn):
+            raise self.MoveException(self, f"Cannot promote piece at {location}, it is not a pawn")
+        if not ((piece.location[1] == "8" and piece.color == 'white') or (piece.location[1] == "1" and piece.color == 'black')):
+            raise self.MoveException(self, f"Can only promote pawns in the end row")
+        self.squares[location] = None
+        self.pieces[piece.color].remove(piece)
+        new_piece = globals()[new_type](piece.color, location)
+        self.add_piece(new_piece)
+        self.pieces[piece.color].append(new_piece)
+        self[location] = new_piece
