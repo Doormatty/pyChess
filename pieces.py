@@ -1,3 +1,6 @@
+from utils import Color
+
+
 class Piece:
     class MoveException(Exception):
         pass
@@ -41,10 +44,10 @@ class Piece:
             self.int_horz = ord(self._location[0].lower())
 
     def anticolor(self):
-        if self.color == "black":
-            return "white"
+        if self.color == Color.BLACK:
+            return Color.WHITE
         else:
-            return "black"
+            return Color.BLACK
 
     def can_move_to(self, location: str, board):
         raise NotImplementedError
@@ -72,9 +75,9 @@ class Pawn(Piece):
         self.points = 1
 
     def __str__(self):
-        if self.color == "black":
+        if self.color == Color.BLACK:
             return "♙"
-        elif self.color == "white":
+        elif self.color == Color.WHITE:
             return "♟"
 
     def __repr__(self):
@@ -85,7 +88,7 @@ class Pawn(Piece):
             return []
         h = self.location[0]
         v = int(self.location[1])
-        if self.color == "black":
+        if self.color == Color.BLACK:
             if h == "a":
                 return 'b6',
             elif h == "h":
@@ -110,7 +113,7 @@ class Pawn(Piece):
         #         possible_enpassants.append(square)
         # if possible_enpassants:
         #     board.enpassants = possible_enpassants
-        if self.color == 'black':
+        if self.color == Color.BLACK:
             board.enpassants = [f"{self.location[0]}{self.int_vert + 1}"]
         else:
             board.enpassants = [f"{self.location[0]}{self.int_vert - 1}"]
@@ -124,7 +127,7 @@ class Pawn(Piece):
             return False
         if not board.is_move_clear(self.location, location):
             return False
-        color = 1 if self.color == "white" else -1
+        color = 1 if self.color == Color.WHITE else -1
         if move_distance[1] == (1 * color):
             return True
         if move_distance[1] == (2 * color) and not self.has_moved:
@@ -135,7 +138,7 @@ class Pawn(Piece):
         if self.location is None:
             raise self.MoveException("Why are we trying to take a piece that doesn't have a location?")
         move_distance = board.get_move_distance(self.location, location)
-        if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == "white") or (move_distance[1] == -1 and self.color == "black")):
+        if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == Color.WHITE) or (move_distance[1] == -1 and self.color == Color.BLACK)):
             return True
         if location in board.enpassants and board[location].__class__.__name__ == "Pawn":
             return True
@@ -148,9 +151,9 @@ class Knight(Piece):
         self.points = 3
 
     def __str__(self):
-        if self.color == "black":
+        if self.color == Color.BLACK:
             return "♘"
-        elif self.color == "white":
+        elif self.color == Color.WHITE:
             return "♞"
 
     def __repr__(self):
@@ -169,9 +172,9 @@ class Bishop(Piece):
         self.points = 3
 
     def __str__(self):
-        if self.color == "black":
+        if self.color == Color.BLACK:
             return "♗"
-        elif self.color == "white":
+        elif self.color == Color.WHITE:
             return "♝"
 
     def __repr__(self):
@@ -192,9 +195,9 @@ class Rook(Piece):
         self.points = 5
 
     def __str__(self):
-        if self.color == "black":
+        if self.color == Color.BLACK:
             return "♖"
-        elif self.color == "white":
+        elif self.color == Color.WHITE:
             return "♜"
 
     def __repr__(self):
@@ -218,9 +221,9 @@ class Queen(Piece):
         self.points = 9
 
     def __str__(self):
-        if self.color == "black":
+        if self.color == Color.BLACK:
             return "♕"
-        elif self.color == "white":
+        elif self.color == Color.WHITE:
             return "♛"
 
     def __repr__(self):
@@ -242,9 +245,9 @@ class King(Piece):
         self.points = 100
 
     def __str__(self):
-        if self.color == "black":
+        if self.color == Color.BLACK:
             return "♔"
-        elif self.color == "white":
+        elif self.color == Color.WHITE:
             return "♚"
 
     def __repr__(self):
@@ -252,6 +255,12 @@ class King(Piece):
 
     def move_effects(self, location: str, board):
         self.has_moved = True
+
+    def is_in_check(self, board):
+        for piece in board.pieces[self.anticolor()]:
+            if piece.can_take(self.location, board):
+                return True
+        return False
 
     def is_checkmate(self, board):
         for y in (-1, 0, 1):

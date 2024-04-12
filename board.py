@@ -1,26 +1,16 @@
-import io
 import logging
 import re
 from collections import defaultdict
 from collections.abc import Iterator
 from copy import deepcopy
 
+
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.text import Text
 
 from pieces import Pawn, Knight, Bishop, Rook, Queen, King, Piece
-
-
-def rich_pprint(obj):
-    with io.StringIO() as buf, Console(file=buf, force_terminal=True) as console:
-        console.print(obj)
-        return buf.getvalue()
-
-
-# TODO - Write function that returns a dictionary of pieces, with the values being all possible moves and captures possible by that piece.
-# TODO - Write function that takes the above mentioned dictionary, and provides scores for each possible move/capture
-# TODO - Handle Check and Checkmate
+from utils import Color
 
 class Board:
     class MoveException(Exception):
@@ -64,10 +54,10 @@ class Board:
         Initialize the chess board. Set up required variables and clear the board.
         """
         self.console = Console()
-        self.pieces = {"white": [], "black": []}
+        self.pieces = {Color.WHITE: [], Color.BLACK: []}
         self.squares: dict[str, None | Piece] = {name: None for name in Board._precomputed_square_names}
-        self.captured_pieces = {"white": [], "black": []}
-        self.active_player = 'white'
+        self.captured_pieces = {Color.WHITE: [], Color.BLACK: []}
+        self.active_player = Color.WHITE
         self.turn_number = 0
         self.moves = []
         self.halfmove_counter = 0
@@ -100,6 +90,9 @@ class Board:
             else:
                 setattr(backup_board, k, deepcopy(v, memo))
         return backup_board
+
+    def get_king(self, color):
+        return [piece for piece in self.pieces[color] if piece.__class__.__name__ == 'King'][0]
 
     def __eq__(self, other):
         if self.turn_number != other.turn_number:
@@ -141,7 +134,7 @@ class Board:
 
     @property
     def antiplayer(self):
-        return 'black' if self.active_player == 'white' else 'white'
+        return Color.BLACK if self.active_player == Color.WHITE else Color.WHITE
 
     def add_piece(self, piece: Piece):
         color = piece.color
@@ -159,15 +152,15 @@ class Board:
     def determine_move_type(self, start, end=None):
         if start in ("O-O", "O-O-O"):
             return start
-        if abs(int(start[1])-int(end[1]))==1 and self[end] is None and end in self.enpassants and self[start].__class__.__name__ == "Pawn":
+        if abs(int(start[1]) - int(end[1])) == 1 and self[end] is None and end in self.enpassants and self[start].__class__.__name__ == "Pawn":
             return "enpassant"
         return None
 
     def move(self, start=None, end=None, special=None, override=False):
-        self.validate_move(start, end)
         if special is None:
-            special = self.determine_move_type(start,end)
+            special = self.determine_move_type(start, end)
         if special is None:
+            self.validate_move(start, end)
             self.handle_standard_move(start, end)
         elif special in ("O-O", "O-O-O"):
             self.handle_castling(special)
@@ -189,14 +182,14 @@ class Board:
         Clear the board.
         """
         self.squares = defaultdict(lambda: None)
-        self.pieces = {"white": [], "black": []}
-        self.captured_pieces = {"white": [], "black": []}
+        self.pieces = {Color.WHITE: [], Color.BLACK: []}
+        self.captured_pieces = {Color.WHITE: [], Color.BLACK: []}
         self.turn_number = 0
         self.moves = []
         self.halfmove_counter = 0
         self.enpassants = []
         self.castling = []
-        self.active_player = "white"
+        self.active_player = Color.WHITE
 
     @staticmethod
     def get_square_color(square: str) -> str:
@@ -285,8 +278,8 @@ class Board:
         color = self.active_player
         if move == "O-O":
             if not can_castle[color]['kingside']:
-                raise self.MoveException(self, f"{color} cannot castle Kingside.")
-            if color == "white":
+                raise self.MoveException(self, f"{color.value} cannot castle Kingside.")
+            if color == Color.WHITE.value:
                 self._force_move("e1", "g1")
                 self._force_move("h1", "f1")
                 self["g1"].has_moved = True
@@ -298,28 +291,28 @@ class Board:
                 self["f8"].has_moved = True
         elif move == "O-O-O":
             if not can_castle[color]['queenside']:
-                raise self.MoveException(self, f"{color} cannot castle Queenside.")
-            if color == "white":
+                raise self.MoveException(self, f"{color.value} cannot castle Queenside.")
+            if color == Color.WHITE.value:
                 self._force_move("e1", "c1")
                 self._force_move("a1", "e1")
                 self["c1"].has_moved = True
                 self["e1"].has_moved = True
             else:
                 self._force_move("e8", "c8")
-                self._force_move("a8", "e8")
+                self._force_move("a8", "d8")
                 self["c8"].has_moved = True
-                self["e8"].has_moved = True
+                self["d8"].has_moved = True
         self.halfmove_counter += 1
-        self.active_player = 'white' if self.active_player == 'black' else 'black'
+        self.active_player = Color.WHITE if self.active_player == Color.BLACK else Color.BLACK
 
     def can_castle(self) -> dict:
-        retval = {'white': {}, 'black': {}}
+        retval = {Color.WHITE: {'queenside': False, 'kingside': False}, Color.BLACK: {'queenside': False, 'kingside': False}}
         if self['e1'] is not None and not self['e1'].has_moved:
-            retval['white']['queenside'] = self['a1'] is not None and not self['a1'].has_moved and not self.who_can_capture('e1', color_filter='black') and not self.who_can_capture('d1', color_filter='black') and not self.who_can_capture('c1', color_filter='black') and not self.who_can_capture('b1', color_filter='black')
-            retval['white']['kingside'] = self['h1'] is not None and not self['h1'].has_moved and not self.who_can_capture('e1', color_filter='black') and not self.who_can_capture('f1', color_filter='black') and not self.who_can_capture('g1', color_filter='black')
+            retval[Color.WHITE]['queenside'] = self['a1'] is not None and not self['a1'].has_moved and not self.who_can_capture('e1', color_filter=Color.BLACK) and not self.who_can_capture('d1', color_filter=Color.BLACK) and not self.who_can_capture('c1', color_filter=Color.BLACK) and not self.who_can_capture('b1', color_filter=Color.BLACK)
+            retval[Color.WHITE]['kingside'] = self['h1'] is not None and not self['h1'].has_moved and not self.who_can_capture('e1', color_filter=Color.BLACK) and not self.who_can_capture('f1', color_filter=Color.BLACK) and not self.who_can_capture('g1', color_filter=Color.BLACK)
         if self['e8'] is not None and not self['e8'].has_moved:
-            retval['black']['queenside'] = self['a8'] is not None and not self['a8'].has_moved and not self.who_can_capture('e8', color_filter='white') and not self.who_can_capture('d8', color_filter='white') and not self.who_can_capture('c8', color_filter='white') and not self.who_can_capture('b8', color_filter='white')
-            retval['black']['kingside'] = self['h8'] is not None and not self['h8'].has_moved and not self.who_can_capture('e8', color_filter='white') and not self.who_can_capture('f8', color_filter='white') and not self.who_can_capture('g8', color_filter='white')
+            retval[Color.BLACK]['queenside'] = self['a8'] is not None and not self['a8'].has_moved and not self.who_can_capture('e8', color_filter=Color.WHITE) and not self.who_can_capture('d8', color_filter=Color.WHITE) and not self.who_can_capture('c8', color_filter=Color.WHITE) and not self.who_can_capture('b8', color_filter=Color.WHITE)
+            retval[Color.BLACK]['kingside'] = self['h8'] is not None and not self['h8'].has_moved and not self.who_can_capture('e8', color_filter=Color.WHITE) and not self.who_can_capture('f8', color_filter=Color.WHITE) and not self.who_can_capture('g8', color_filter=Color.WHITE)
         return retval
 
     def fen_can_castle(self) -> str:
@@ -331,7 +324,7 @@ class Board:
         '-' means no king can castle anymore.
         """
         can_castle = self.can_castle()
-        retval = f'{"K" if can_castle["white"]["kingside"] else ""}{"Q" if can_castle["white"]["queenside"] else ""}{"k" if can_castle["black"]["kingside"] else ""}{"q" if can_castle["black"]["queenside"] else ""}'
+        retval = f'{"K" if can_castle[Color.WHITE]["kingside"] else ""}{"Q" if can_castle[Color.WHITE]["queenside"] else ""}{"k" if can_castle[Color.BLACK]["kingside"] else ""}{"q" if can_castle[Color.BLACK]["queenside"] else ""}'
         if retval == "":
             retval = '-'
         return retval
@@ -340,14 +333,14 @@ class Board:
         move = parsed_move['move']
         if move in ("O-O", "O-O-O"):
             if move == "O-O-O":
-                return f"{self.active_player.capitalize()}: castles Queenside"
+                return f"{self.active_player.value()}: castles Queenside"
             else:
-                return f"{self.active_player.capitalize()}: castles Kingside"
+                return f"{self.active_player.value()}: castles Kingside"
 
         if parsed_move['capture']:
-            return f"{self.active_player.capitalize()}: {parsed_move['start_square']} to {parsed_move['end_square']}, {self.squares[parsed_move['start_square']].__class__.__name__} takes {self.squares[parsed_move['end_square']].__class__.__name__}"
+            return f"{self.active_player.value()}: {parsed_move['start_square']} to {parsed_move['end_square']}, {self.squares[parsed_move['start_square']].__class__.__name__} takes {self.squares[parsed_move['end_square']].__class__.__name__}"
         else:
-            return f"{self.active_player.capitalize()}: {parsed_move['start_square']} to {parsed_move['end_square']}"
+            return f"{self.active_player.value()}: {parsed_move['start_square']} to {parsed_move['end_square']}"
 
     def compact_move(self, move: str):
         parsed_move = self.parse_move(move)
@@ -374,7 +367,7 @@ class Board:
 
     @staticmethod
     def parse_move(move: str) -> dict:
-        pattern = r'((?P<start_type>[KQNBR])?(?P<start_square>[a-h][1-8]?)?(?P<capture>x)?(?P<end_type>[KQNBR])?(?P<end_square>[a-h][1-8])(?P<check>\+)?)?(?P<kscastle>O-O)?(?P<qscastle>O-O-O)?(?P<checkmate>#)?'
+        pattern = r'((?P<start_type>[KQNBR])?(?P<start_square>[a-h][1-8]?)?(?P<capture>x)?(?P<end_type>[KQNBR])?(?P<end_square>[a-h][1-8])=?(?P<promotion>[KQNBR])?(?P<check>\+)?)?(?P<kscastle>O-O)?(?P<qscastle>O-O-O)?(?P<checkmate>#)?'
         parts = re.match(pattern, move)
         type_dict = {'K': King, 'Q': Queen, 'R': Rook, 'B': Bishop, 'N': Knight}
         return {'move': move,
@@ -382,6 +375,7 @@ class Board:
                 'end_type': type_dict[parts['end_type']] if parts['end_type'] is not None else None,
                 'start_square': parts['start_square'],
                 'end_square': parts['end_square'],
+                'promote': parts['promote'] if parts['promote'] else False,
                 'capture': True if parts['capture'] else False,
                 'check': True if parts['check'] else False,
                 'checkmate': True if parts['checkmate'] else False,
@@ -397,7 +391,7 @@ class Board:
             return is_check
 
     def is_king_in_check(self, player):
-        king = [piece for piece in self.pieces[player] if piece.__class__.__name__ == 'King'][0]
+        king = self.get_king(player)
         attackers = self.who_can_capture(king.location)
         if attackers:
             self.logger.info(f"King's attackers found: {attackers}")
@@ -438,9 +432,9 @@ class Board:
         return self.who_can_capture(end_square, parsed_move['start_type'].__qualname__, start_square[0] if start_square else None, self.antiplayer)
 
     def handle_enpassant_possibility(self, parsed_move, start_square, end_square):
-        capture_rank = '6' if self.active_player == 'white' else '3'
+        capture_rank = '6' if self.active_player == Color.WHITE else '3'
         square_to_capture = f'{end_square[0]}{capture_rank}'
-        possibles = self.who_can_capture(end_square, 'Pawn', start_square[0] if start_square else None, self.active_player)
+        possibles = self.who_can_capture(end_square, 'Pawn', start_square[0] if start_square else None, self.active_player.value)
         if len(possibles) != 1:
             raise self.MoveException(self, "En passant capture ambiguity.")
         return possibles
@@ -483,7 +477,7 @@ class Board:
                         piece_name = "N"
                     else:
                         piece_name = str(piece.__class__.__name__)[0]
-                    if piece.color == "white":
+                    if piece.color == Color.WHITE:
                         fen += piece_name.upper()
                     else:
                         fen += piece_name.lower()
@@ -500,8 +494,7 @@ class Board:
         """
         Initialize the board with a standard set of pieces.
         """
-        self.turn_number = 1
-        self.active_player = "white"
+        self.clear()
 
         for square in self.iter_square_names():
             row = square[1]
@@ -510,11 +503,11 @@ class Board:
             if row in ('3', '4', '5', '6'):
                 self.squares[square] = None
             elif row == '2':
-                self.add_piece(piece=Pawn('white', location=square))
+                self.add_piece(piece=Pawn(Color.WHITE, location=square))
             elif row == '7':
-                self.add_piece(piece=Pawn('black', location=square))
+                self.add_piece(piece=Pawn(Color.BLACK, location=square))
             elif row in ('1', '8'):
-                color = 'white' if row == '1' else 'black'
+                color = Color.WHITE if row == '1' else Color.BLACK
 
                 if col in ('a', 'h'):
                     self.add_piece(piece=Rook(color, location=square))
@@ -531,7 +524,7 @@ class Board:
         if location is None:
             raise ValueError("Location cannot be None")
 
-        color = color or self.active_player
+        color = color or self.active_player.value
         pieces = []
         for piece in self.pieces[color]:
             if piece_filter is None or piece.__class__.__name__ == piece_filter:
@@ -587,7 +580,7 @@ class Board:
 
                 if piece is not None:
                     square_text = f'{piece} '
-                    piece_color = self.black_piece_color if piece.color == 'black' else self.white_piece_color
+                    piece_color = self.black_piece_color if piece.color == Color.BLACK else self.white_piece_color
                 else:
                     square_text = '  '
                     piece_color = None
@@ -624,17 +617,20 @@ class Board:
         self.castle(special)
         self.moves.append(special)
         self.enpassants = []
-        if self.active_player == 'white':
+        if self.active_player == Color.WHITE:
             self.turn_number += 1
 
     def handle_enpassant(self, start, end):
-        capture_rank = '5' if self.active_player == 'white' else '4'
+        capture_rank = '5' if self.active_player == Color.WHITE else '4'
         square_to_capture = f'{end[0]}{capture_rank}'
         captured_piece = deepcopy(self[square_to_capture])
         self[square_to_capture] = None
         self._force_move(start, end)
         self.captured_pieces[captured_piece.color].append(captured_piece)
-        self[end].move_effects(end, self)
+        if self[end] is not None:
+            self[end].move_effects(end, self)
+        else:
+            print(1)
 
     def handle_standard_move(self, start, end):
         piece = self.squares[start]
@@ -669,18 +665,18 @@ class Board:
             raise self.MoveException(self, f"Move of {piece.color} {piece.__class__.__name__} from {piece.location} to {end} is an illegal move, as that piece cannot capture the piece at {end}")
 
     def finalize_move(self, start, end, special, override):
-        self.moves.append(f"{start} {end}")
+        self.moves.append((f"{start} {end}", (self[start], self[end])))
         if not override:
-            self.active_player = "black" if self.active_player == "white" else "white"
+            self.active_player = Color.BLACK if self.active_player == Color.WHITE else Color.WHITE
         self.check_for_checkmate()
-        if self.active_player == "white":
+        if self.active_player == Color.WHITE:
             self.turn_number += 1
 
     def promote_pawn(self, location, new_type):
         piece = self[location]
         if piece is None or not isinstance(piece, Pawn):
             raise self.MoveException(self, f"Cannot promote piece at {location}, it is not a pawn")
-        if not ((piece.location[1] == "8" and piece.color == 'white') or (piece.location[1] == "1" and piece.color == 'black')):
+        if not ((piece.location[1] == "8" and piece.color == Color.WHITE) or (piece.location[1] == "1" and piece.color == Color.BLACK)):
             raise self.MoveException(self, f"Can only promote pawns in the end row")
         self.squares[location] = None
         self.pieces[piece.color].remove(piece)
