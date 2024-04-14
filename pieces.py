@@ -1,4 +1,4 @@
-from utils import Color
+from utils import Color, Location
 
 
 class Piece:
@@ -6,10 +6,12 @@ class Piece:
         pass
 
     def __init__(self, color, location):
+        if isinstance(location, str):
+            location = Location(location)
         self._location = location
         if location is not None:
-            self.int_vert = int(self._location[1])
-            self.int_horz = ord(self._location[0].lower())
+            self.int_vert = location.rank
+            self.int_horz = location.int_file
         self.color = color
         self.points = None
         self.has_moved = False
@@ -21,6 +23,9 @@ class Piece:
             if k not in ['_location', 'int_vert', 'int_horz']:
                 setattr(result, k, v)
         return result
+
+    def string(self):
+        return f'{self.color.value} {self.__class__.__name__}'
 
     def __eq__(self, other):
         return self.color == other.color and self.location == other.location
@@ -39,9 +44,11 @@ class Piece:
             self.int_horz = None
             self.int_vert = None
         else:
+            if isinstance(value, str):
+                value = Location(value)
             self._location = value
-            self.int_vert = int(self._location[1])
-            self.int_horz = ord(self._location[0].lower())
+            self.int_vert = value.rank
+            self.int_horz = value.int_file
 
     def anticolor(self):
         if self.color == Color.BLACK:
@@ -49,24 +56,24 @@ class Piece:
         else:
             return Color.BLACK
 
-    def can_move_to(self, location: str, board):
+    def can_move_to(self, location: str | Location, game):
         raise NotImplementedError
 
-    def can_take(self, location: str, board) -> bool:
-        result = self.can_move_to(location, board)
+    def can_take(self, location: str | Location, game) -> bool:
+        result = self.can_move_to(location, game)
 
         # and board[location] is not None and board[location].color == self.anticolor())
         return result
 
-    def get_all_possible_moves(self, board) -> list[str]:
+    def get_all_possible_moves(self, board) -> list[Location]:
         possible_moves = []
         for square in board.iter_square_names():
             if self.can_move_to(square, board) or self.can_take(square, board):
                 possible_moves.append(square)
         return possible_moves
 
-    def move_effects(self, location, board):
-        board.enpassants = []
+    def move_effects(self, start: Location, end: Location, game):
+        game.board.enpassants = []
 
 
 class Pawn(Piece):
@@ -103,30 +110,36 @@ class Pawn(Piece):
             else:
                 return f"{chr(ord(h) - 1)}{v + 1}", f"{chr(ord(h) + 1)}{v + 1}"
 
-    def move_effects(self, location: str, board):
+    def move_effects(self, start: Location | str, end: Location, game):
+        if isinstance(start, str):
+            start = Location(start)
+        if isinstance(end, str):
+            end = Location(end)
         if self.location is None:
             return
-        board.halfmove_counter = 0
-        possible_enpassants = []
-        # for square in self._enpassant_squares():
-        #     if board[square] is not None and board[square].__class__.__name__ == "Pawn" and board[square].color == self.anticolor():
-        #         possible_enpassants.append(square)
-        # if possible_enpassants:
-        #     board.enpassants = possible_enpassants
-        if self.color == Color.BLACK:
-            board.enpassants = [f"{self.location[0]}{self.int_vert + 1}"]
+        game.halfmove_counter = 0
+        if end is not None and start - end in ((0, 2), (0, -2)):
+            if self.color == Color.BLACK:
+                game.enpassants = f"{self.location[0]}{self.int_vert + 1}"
+            else:
+                game.enpassants = f"{self.location[0]}{self.int_vert - 1}"
         else:
-            board.enpassants = [f"{self.location[0]}{self.int_vert - 1}"]
+            game.enpassants = None
         self.has_moved = True
 
-    def can_move_to(self, location: str, board):
+    def can_move_to(self, location: Location | str, game):
+        if isinstance(location, str):
+            location = Location(location)
         if self.location is None:
             return False
-        move_distance = board.get_move_distance(self.location, location)
+        move_distance = location - self.location
         if move_distance[0] != 0:
             return False
-        if not board.is_move_clear(self.location, location):
-            return False
+        try:
+            if not game.board.is_move_clear(self.location, location):
+                return False
+        except AttributeError as e:
+            print('')
         color = 1 if self.color == Color.WHITE else -1
         if move_distance[1] == (1 * color):
             return True
@@ -134,13 +147,13 @@ class Pawn(Piece):
             return True
         return False
 
-    def can_take(self, location: str, board):
+    def can_take(self, location: Location, game):
         if self.location is None:
             raise self.MoveException("Why are we trying to take a piece that doesn't have a location?")
-        move_distance = board.get_move_distance(self.location, location)
-        if move_distance[0] in (1, -1) and ((move_distance[1] == 1 and self.color == Color.WHITE) or (move_distance[1] == -1 and self.color == Color.BLACK)):
+        move_distance = self.location - location
+        if move_distance[0] in (1, -1) and ((move_distance[1] == -1 and self.color == Color.WHITE) or (move_distance[1] == 1 and self.color == Color.BLACK)):
             return True
-        if location in board.enpassants and board[location].__class__.__name__ == "Pawn":
+        if game.enpassants is not None and location in game.enpassants and game.board[location].__class__.__name__ == "Pawn":
             return True
         return False
 
@@ -159,10 +172,10 @@ class Knight(Piece):
     def __repr__(self):
         return f"Knight('{self.color}', '{self.location}')"
 
-    def can_move_to(self, location, board):
+    def can_move_to(self, location, game):
         if self.location is None:
             return False
-        move_distance = board.get_move_distance(self.location, location)
+        move_distance = self.location - location
         return (move_distance[0] in (1, -1) and move_distance[1] in (2, -2)) or (move_distance[0] in (2, -2) and move_distance[1] in (1, -1))
 
 
@@ -180,12 +193,12 @@ class Bishop(Piece):
     def __repr__(self):
         return f"Bishop('{self.color}', '{self.location}')"
 
-    def can_move_to(self, location, board):
+    def can_move_to(self, location, game):
         if self.location is None:
             return False
-        if not board.is_move_clear(self.location, location):
+        if not game.board.is_move_clear(self.location, location):
             return False
-        move_distance = board.get_move_distance(self.location, location)
+        move_distance = self.location - location
         return abs(move_distance[0]) == abs(move_distance[1])
 
 
@@ -203,15 +216,17 @@ class Rook(Piece):
     def __repr__(self):
         return f"Rook('{self.color}', '{self.location}')"
 
-    def can_move_to(self, location, board):
+    def can_move_to(self, location, game):
         if self.location is None:
             return False
-        if not board.is_move_clear(self.location, location):
+        move_distance = self.location - location
+        if move_distance[0] != 0 and move_distance[1] != 0:
             return False
-        move_distance = board.get_move_distance(self.location, location)
-        return move_distance[0] == 0 or move_distance[1] == 0
+        if not game.board.is_move_clear(self.location, location):
+            return False
+        return True
 
-    def move_effects(self, location: str, board):
+    def move_effects(self, start: str | Location, end: Location, game):
         self.has_moved = True
 
 
@@ -229,14 +244,15 @@ class Queen(Piece):
     def __repr__(self):
         return f"Queen('{self.color}', '{self.location}')"
 
-    def can_move_to(self, location, board):
+    def can_move_to(self, location, game):
         if self.location is None:
             return False
-        if not board.is_move_clear(self.location, location):
+        move_distance = self.location - location
+        if abs(move_distance[0]) != abs(move_distance[1]) and (move_distance[0] != 0 and move_distance[1] != 0):
             return False
-        move_distance = board.get_move_distance(self.location, location)
-        result = abs(move_distance[0]) == abs(move_distance[1]) or (move_distance[0] == 0 or move_distance[1] == 0)
-        return result
+        if not game.board.is_move_clear(self.location, location):
+            return False
+        return True
 
 
 class King(Piece):
@@ -253,7 +269,7 @@ class King(Piece):
     def __repr__(self):
         return f"King('{self.color}', '{self.location}')"
 
-    def move_effects(self, location: str, board):
+    def move_effects(self, start: str | Location, end: Location, game):
         self.has_moved = True
 
     def is_in_check(self, board):
@@ -262,27 +278,27 @@ class King(Piece):
                 return True
         return False
 
-    def is_checkmate(self, board):
+    def is_checkmate(self, game):
         for y in (-1, 0, 1):
             for x in (-1, 0, 1):
                 if x == 0 and y == 0:  # Skip the square where the king currently is
                     continue
                 target_square = f"{chr(ord(self.location[0]) + x)}{(int(self.location[1]) + y)}"
-                if not board.is_valid_square_name(target_square):
+                if not game.board.is_valid_square_name(target_square):
                     continue
-                if self.can_move_to(target_square, board):
+                if self.can_move_to(target_square, game):
                     return False
         return True
 
-    def can_move_to(self, location, board):
-        move_distance = board.get_move_distance(self.location, location)
+    def can_move_to(self, location, game):
+        move_distance = self.location - location
         if move_distance[0] not in (1, 0, -1) or move_distance[1] not in (1, 0, -1):
             return False
         if location is None:
             raise ValueError("Location cannot be None")
 
-        for piece in board.pieces[self.anticolor()]:
-            if piece.can_take(location, board):
+        for piece in game.pieces[self.anticolor()]:
+            if piece.can_take(location, game):
                 print(f"{piece} can take {location}")
                 return False
         return True

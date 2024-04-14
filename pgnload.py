@@ -2,6 +2,7 @@ import re
 
 import pieces
 from board import Board
+from game import Game
 
 
 class PgnLoader:
@@ -16,11 +17,12 @@ class PgnLoader:
             return f"{super().__str__()}\n{self.board.create_board_text(highlights=self.highlights)}"
 
     def __init__(self):
+        self.game = Game()
         self.data = None
-        self.tags = None
+        self.tags = dict()
         self.moves = None
-        self.board = Board(loglevel='ERROR')
-        self.board.initialize_board()
+        self.game.reset()
+        self.game.setup_board()
         self.original = None
 
     def __getattr__(self, name):
@@ -32,10 +34,10 @@ class PgnLoader:
 
     def _clear(self):
         self.data = None
-        self.tags = None
+        self.tags = dict()
         self.moves = None
-        self.board = Board(loglevel='ERROR')
-        self.board.initialize_board()
+        self.game.reset()
+        self.game.setup_board()
 
     def load_file(self, filename):
         self._clear()
@@ -73,7 +75,7 @@ class PgnLoader:
         played_moves = []
         for move in self.moves:
             try:
-                self.board.compact_move(move)
+                self.game.compact_move(move)
             except (PgnLoader.PgnLoaderException, Board.MoveException, pieces.Piece.MoveException) as e:
                 state = e
                 break
@@ -82,12 +84,13 @@ class PgnLoader:
         if state is not None:
             return state, played_moves
         else:
-            if self.tags['result'] == '1/2-1/2' and not self.board.check_for_checkmate():
+            if self.tags['result'] == '1/2-1/2' and not self.game.check_for_checkmate():
                 return "draw", played_moves
             else:
                 return "end", played_moves
 
+
 if __name__ == '__main__':
     loader = PgnLoader()
-    loader.load_file('game1.pgn')
+    loader.load_file('pgn_files/single_game.pgn')
     loader.play_game()

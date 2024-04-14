@@ -69,4 +69,4 @@ def run_games(filename, stop_on_fail=False, detail=False):
             outfile.write(game + '\n')
 
 
-run_games("lichess_2013-01-example.pgn")
+run_games("pgn_files/lichess_2013-01-example.pgn")
