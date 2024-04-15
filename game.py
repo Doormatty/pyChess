@@ -12,10 +12,21 @@ from utils import Color, Location
 
 class Game:
     class MoveException(Exception):
-        pass
+        def __init__(self, message: str, game: 'Game' = None) -> None:
+            # super().__init__(message)
+            self.message = message
+            if game is not None:
+                self.game = game
+                self.game.console.print(self.message)
+                self.game.console.print(self.game.board.create_board_text())
 
-    def __init__(self, loglevel='INFO'):
+    def __init__(self, loglevel='DEBUG'):
         self.console = Console()
+        self.add_logging_level('TRACE', logging.DEBUG - 5)
+        self.loglevel = loglevel.upper()
+        logging.basicConfig(level=loglevel, format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True, console=self.console, markup=True, show_path=False)])
+        self.logger = logging.getLogger("rich")
+        self.logger.setLevel(self.loglevel)
         self.board = Board(console=self.console)
         self.pieces = {Color.WHITE: [], Color.BLACK: []}
         self.captured_pieces = {Color.WHITE: [], Color.BLACK: []}
@@ -26,9 +37,57 @@ class Game:
         self.castling = []
         self.active_player = Color.WHITE
         self.setup_board()
-        logging.basicConfig(level=loglevel, format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True, console=self.console, markup=True, show_path=False)])
-        self.logger = logging.getLogger("rich")
-        self.logger.setLevel(loglevel)
+
+    @staticmethod
+    def add_logging_level(level_name, levelNum, methodName=None):
+        """
+        Comprehensively adds a new logging level to the `logging` module and the
+        currently configured logging class.
+
+        `levelName` becomes an attribute of the `logging` module with the value
+        `levelNum`. `methodName` becomes a convenience method for both `logging`
+        itself and the class returned by `logging.getLoggerClass()` (usually just
+        `logging.Logger`). If `methodName` is not specified, `levelName.lower()` is
+        used.
+
+        To avoid accidental clobberings of existing attributes, this method will
+        raise an `AttributeError` if the level name is already an attribute of the
+        `logging` module or if the method name is already present
+
+        Example
+        -------
+        >>> addLoggingLevel('TRACE', logging.DEBUG - 5)
+        >>> logging.getLogger(__name__).setLevel("TRACE")
+        >>> logging.getLogger(__name__).trace('that worked')
+        >>> logging.trace('so did this')
+        >>> logging.TRACE
+        5
+
+        """
+        if not methodName:
+            methodName = level_name.lower()
+
+        if hasattr(logging, level_name):
+            return  # raise AttributeError('{} already defined in logging module'.format(level_name))
+        if hasattr(logging, methodName):
+            return  # raise AttributeError('{} already defined in logging module'.format(methodName))
+        if hasattr(logging.getLoggerClass(), methodName):
+            return  # raise AttributeError('{} already defined in logger class'.format(methodName))
+
+        # This method was inspired by the answers to Stack Overflow post
+        # http://stackoverflow.com/q/2183233/2988730, especially
+        # http://stackoverflow.com/a/13638084/2988730
+        def log_for_level(self, message, *args, **kwargs):
+            if self.isEnabledFor(levelNum):
+                self._log(levelNum, message, args, **kwargs)
+
+        def log_to_root(message, *args, **kwargs):
+            logging.log(levelNum, message, *args, **kwargs)
+
+        logging.addLevelName(levelNum, level_name)
+        setattr(logging, level_name, levelNum)
+        setattr(logging.getLoggerClass(), methodName, log_for_level)
+        setattr(logging, methodName, log_to_root)
 
     @property
     def antiplayer(self):
@@ -47,6 +106,7 @@ class Game:
         self.enpassants = []
         self.castling = []
         self.active_player = Color.WHITE
+        self.logger.trace("Finished resetting game board.")
 
     def setup_board(self):
         """
@@ -78,6 +138,7 @@ class Game:
                     self.add_piece(piece=Queen(color, location=square))
                 elif col == 'e':
                     self.add_piece(piece=King(color, location=square))
+        self.logger.trace(f"Finished setting up initial piece positions.")
 
     def add_piece(self, piece):
         self.pieces[piece.color].append(piece)
@@ -88,14 +149,21 @@ class Game:
 
     def move(self, start: Location | str, end: Location | str | None):
         if start in ("O-O", "O-O-O"):
-            self.handle_castling(start)
+            self.castle(start)
+            self.logger.info(f"Turn {self.turn_number}-{self.active_player.value.capitalize()}: Castles {'kingside' if start == 'O-O' else 'queenside'}")
+            self.finalize_move(start, None)
             return
         start = Location(start) if isinstance(start, str) else start
         end = Location(end) if isinstance(end, str) else end
-
+        piece_piece = None
+        for x in self.pieces[self.active_player]:
+            if x.location == start:
+                piece_piece = x
+        if piece_piece is None:
+            raise Game.MoveException('This should never happen!!!', self)
         # Ensure there is a piece at the start location
         if self.board[start] is None:
-            raise Game.MoveException(f"No piece at {start}")
+            raise Game.MoveException(f"No piece at {start}", self)
 
         # Determine if the move is a capture or a standard move
         if end == self.enpassants:
@@ -105,14 +173,14 @@ class Game:
             if self.board[end] is not None:
                 # Handle regular capture
                 if not self.board[start].can_take(end, self):
-                    raise Game.MoveException(f"{self.board[start].string()} at {start} cannot capture {self.board[end].string()} at {end}")
+                    raise Game.MoveException(f"{self.board[start].string()} at {start} cannot capture {self.board[end].string()} at {end}", self)
                 captured_piece = self.board[end]
                 captured_piece.location = None  # Remove captured piece from the board
                 self.enpassants = None
             else:
                 # Handle non-capture move
                 if not self.board[start].can_move_to(end, self):
-                    raise Game.MoveException(f"{self.board[start].string()} at {start} can't move to {end}")
+                    raise Game.MoveException(f"{self.board[start].string()} at {start} can't move to {end}", self)
                 captured_piece = None
 
             # Move the piece
@@ -122,49 +190,40 @@ class Game:
 
         if captured_piece:
             self.captured_pieces[captured_piece.color].append(captured_piece)
-            self.pieces[captured_piece.color].remove(captured_piece)
-            self.finalize_move(start=start, end=end)
+            for piece in self.pieces[captured_piece.color]:
+                if piece == captured_piece:
+                    self.pieces[captured_piece.color].remove(piece)
+        if piece_piece is None:
+            raise Game.MoveException("Piece Piece is none.", self)
+        piece_piece.location = end
+        self.logger.info(f"Turn {self.turn_number}-{self.active_player.value.capitalize()}: {start} to {end}")
+        self.finalize_move(start=start, end=end)
 
     def move_effects(self, start: Location, end: Location | None = None):
+        if isinstance(end, str):
+            end = Location(end)
         if self.board[end] is None:
-            raise Game.MoveException(f"No piece at {end} to apply move effects to.")
+            raise Game.MoveException(f"No piece at {end} to apply move effects to, for move {start} {end}", self)
         self.board[end].move_effects(start=start, end=end, game=self)
 
-    def describe_move(self, parsed_move) -> str:
-        move = parsed_move['move']
-        if move in ("O-O", "O-O-O"):
-            if move == "O-O-O":
-                return f"{self.active_player.value}: castles Queenside"
-            else:
-                return f"{self.active_player.value}: castles Kingside"
-
-        if parsed_move['capture']:
-            return f"{self.active_player.value}: {parsed_move['start_square']} to {parsed_move['end_square']}, {self.board.squares[parsed_move['start_square']].__class__.__name__} takes {self.board.squares[parsed_move['end_square']].__class__.__name__}"
-        else:
-            return f"{self.active_player.value}: {parsed_move['start_square']} to {parsed_move['end_square']}"
-
-    def compact_move(self, move: str):
+    def make_compact_move(self, move: str):
+        self.logger.debug(f"Beginning expansion of compact move '{move}' for {self.active_player.value.capitalize()}")
         parsed_move = self.parse_move(move)
-        capture = parsed_move['capture']
-        # self.logger.debug(f"Parsed {move} into {parsed_move}")
-        expanded_move = self.expand_move(parsed_move)
         if move in ("O-O", "O-O-O"):
+            self.logger.trace(f"{self.active_player.value.capitalize()} is castling {'kingside' if move == 'O-O' else 'queenside'}")
             self.move(move, None)
-            self.logger.info(self.describe_move(parsed_move))
         else:
+            expanded_move = self.expand_move(parsed_move)
+            if expanded_move is None:
+                raise Game.MoveException(f"Could not expand {self.active_player.value.capitalize()}'s move: {move}")
+            self.logger.trace(f"Parsed {self.active_player.value.capitalize()}'s move {move} into {expanded_move[0]}{' -> ' + expanded_move[1] if expanded_move is not None and len(expanded_move) > 1 else ''}")
             parsed_move['start_square'] = expanded_move[0]
             parsed_move['end_square'] = expanded_move[1]
-            description = self.describe_move(parsed_move)
             try:
-                if len(expanded_move) == 3:
-                    self.move(start=expanded_move[0], end=expanded_move[1])
-                else:
-                    self.move(start=expanded_move[0], end=expanded_move[1])
+                self.move(start=expanded_move[0], end=expanded_move[1])
             except self.MoveException as e:
                 self.logger.error(e)
-                raise
-            else:
-                self.logger.info(description)
+                raise e
 
     @staticmethod
     def parse_move(move: str) -> dict:
@@ -187,57 +246,66 @@ class Game:
         if parsed_move['king_castle'] or parsed_move['queen_castle']:
             return parsed_move, None
 
-        start_square, end_square = self.determine_start_and_end_squares(parsed_move)
-        possibles = self.find_possible_moves(parsed_move, start_square, end_square)
-        possibles_after_self_check = [p for p in possibles if not self.does_move_cause_self_check(p.location, end_square)]
+        parsed_move = self.determine_start_and_end_squares(parsed_move)
+        possibles = self.find_possible_moves(parsed_move)
+        self.logger.debug(f"Found {len(possibles)} possible pieces for {self.active_player.value.capitalize()}'s move of ? to {parsed_move['end_square']}: {possibles}")
+        if not possibles:
+            raise Game.MoveException(f"None of {self.active_player.value.capitalize()}'s {'piece' if parsed_move['start_type'] is None else parsed_move['start_type']}s can move to {parsed_move['end_square']}", self)
+        possibles_after_self_check = []
+        for p in possibles:
+            causes_check = self.does_move_cause_self_check(p.location, parsed_move['end_square'])
+            if causes_check:
+                self.logger.debug(f"Move {parsed_move['move']} would put yourself into check - eliminating move from consideration.")
+            else:
+                possibles_after_self_check.append(p)
 
-        if len(possibles_after_self_check) > 1:
-            raise self.MoveException(self, f"Ambiguous move: {parsed_move['move']} could refer to multiple pieces.")
         if not possibles_after_self_check:
-            raise self.MoveException(self, f"No moves found for {parsed_move['move']} after running self-check detection, but had found {possibles}")
-        return possibles_after_self_check[0].location, end_square
+            raise self.MoveException(f"No moves found for {self.active_player.value.capitalize()}'s {parsed_move['move']} after running self-check detection, but had found {possibles} prior to checking.", self)
+        if len(possibles_after_self_check) > 1:
+            raise self.MoveException(f"Ambiguous move: {self.active_player.value.capitalize()}'s {parsed_move['move']} could refer to multiple pieces.", self)
+        return possibles_after_self_check[0].location, parsed_move['end_square']
 
     def determine_start_and_end_squares(self, parsed_move):
-        start_square = parsed_move['start_square']
-        end_square = parsed_move['end_square']
-        if parsed_move['start_type'].__qualname__ == 'King' and start_square is None:
-            start_square = self.find_king_location(self.active_player)
-        return start_square, end_square
+        if parsed_move['start_type'].__qualname__ == 'King' and parsed_move['start_square'] is None:
+            parsed_move['start_square'] = self.find_king_location(self.active_player)
+        return parsed_move
 
-    def find_possible_moves(self, parsed_move, start_square, end_square):
+    def find_possible_moves(self, parsed_move):
         if parsed_move['capture']:
-            return self.find_possible_captures(parsed_move, start_square, end_square)
+            return self.find_possible_captures(parsed_move)
         else:
-            return self.who_can_move_to(location=end_square, color_filter=self.active_player, piece_filter=parsed_move['start_type'].__qualname__, file_filter=start_square[0] if start_square else None)
+            return self.who_can_move_to(location=parsed_move['end_square'], color_filter=self.active_player, piece_filter=parsed_move['start_type'].__qualname__, file_filter=parsed_move['start_square'][0] if parsed_move['start_square'] else None)
 
-    def find_possible_captures(self, parsed_move, start_square, end_square):
-        if end_square in self.enpassants and parsed_move['start_type'].__qualname__ == 'Pawn' and self.board[end_square] is None:
-            return self.handle_enpassant_possibility(parsed_move, start_square, end_square)
-        elif self.board[end_square] is None:
-            raise self.MoveException(self, f"Illegal capture: no piece at {end_square}.")
-        return self.who_can_capture(end_square, parsed_move['start_type'].__qualname__, start_square[0] if start_square else None, self.antiplayer)
+    def find_possible_captures(self, parsed_move):
+        if self.enpassants and parsed_move['end_square'] in self.enpassants and parsed_move['start_type'].__qualname__ == 'Pawn' and self.board[parsed_move['end_square']] is None:
+            return self.handle_enpassant_possibility(parsed_move)
+        elif self.board[parsed_move['end_square']] is None:
+            raise self.MoveException(f"Illegal capture: no piece at {parsed_move['end_square']} for {self.active_player.value.capitalize()}'s move {parsed_move['move']}.", self)
+        return self.who_can_capture(parsed_move['end_square'], parsed_move['start_type'].__qualname__, parsed_move['start_square'][0] if parsed_move['start_square'] else None, self.antiplayer)
 
     def does_move_cause_self_check(self, start, end):
         with self.board.TempMove(self):
             self.move(start, end)
             is_check = self.is_king_in_check(self.active_player)
-            if is_check:
-                self.is_king_in_check(self.active_player)
             return is_check
 
     def finalize_move(self, start, end):
-        self.moves.append((f"{start} {end}", (self.board[start], self.board[end])))
+        if end is not None:
+            self.moves.append((f"{start} {end}", (self.board[start], self.board[end])))
+        elif start in ("O-O", "O-O-O"):
+            self.moves.append(start)
         self.active_player = Color.BLACK if self.active_player == Color.WHITE else Color.WHITE
         self.check_for_checkmate()
+        self.halfmove_counter += 1
         if self.active_player == Color.WHITE:
             self.turn_number += 1
 
     def promote_pawn(self, location, new_type):
         piece = self.board[location]
         if piece is None or not isinstance(piece, Pawn):
-            raise self.MoveException(self, f"Cannot promote piece at {location}, it is not a pawn")
+            raise self.MoveException(f"{self.active_player.value.capitalize()} you cannot promote piece at {location}, it is not a pawn", self)
         if not ((piece.location[1] == "8" and piece.color == Color.WHITE) or (piece.location[1] == "1" and piece.color == Color.BLACK)):
-            raise self.MoveException(self, f"Can only promote pawns in the end row")
+            raise self.MoveException(f"{self.active_player.value.capitalize()} you can only promote pawns in the end row", self)
         self.board[location] = None
         self.pieces[piece.color].remove(piece)
         new_piece = globals()[new_type](piece.color, location)
@@ -245,12 +313,6 @@ class Game:
         self.pieces[piece.color].append(new_piece)
         self.board[location] = new_piece
 
-    def handle_castling(self, special):
-        self.castle(special)
-        self.moves.append(special)
-        self.enpassants = []
-        if self.active_player == Color.WHITE:
-            self.turn_number += 1
 
     def handle_enpassant(self, start, end) -> Piece:
         capture_rank = '5' if self.active_player == Color.WHITE else '4'
@@ -260,7 +322,7 @@ class Game:
         self._force_move(start, end)
         self.captured_pieces[captured_piece.color].append(captured_piece)
         if self.board[end] is not None:
-            self.board[end].move_effects(start, end, self.board)
+            self.board[end].move_effects(start, end, self)
         return captured_piece
 
     def who_can_move_to(self, location, color_filter=None, piece_filter=None, file_filter=None):
@@ -269,10 +331,17 @@ class Game:
 
         color_filter = color_filter or self.active_player.value
         pieces = []
+        self.logger.trace(f"Checking if any of {self.active_player.value.capitalize()}'s {'piece' if piece_filter is None else piece_filter}s can move to {location}")
+
         for piece in self.pieces[color_filter]:
+            logging_string = None
             if piece_filter is None or piece.__class__.__name__ == piece_filter:
+                logging_string = f"{piece.string()}@{piece.location} matches color filter '{color_filter.value.capitalize()}'"
                 if file_filter is None or piece.location[0] == file_filter:
+                    logging_string += f", matches file filter of '{file_filter if file_filter is not None else piece.location[0]}'"
                     if piece.can_move_to(location, self):
+                        logging_string += f" and can move to {location} - added to list of possibles."
+                        self.logger.trace(logging_string)
                         pieces.append(piece)
         return deepcopy(pieces)
 
@@ -280,7 +349,7 @@ class Game:
         can_castle = self.can_castle()
         if move == "O-O":
             if not can_castle[self.active_player]['kingside']:
-                raise self.MoveException(self, f"{self.active_player.value()} cannot castle Kingside.")
+                raise self.MoveException(f"{self.active_player.value()} cannot castle Kingside.", self)
             if self.active_player == Color.WHITE:
                 self._force_move("e1", "g1")
                 self._force_move("h1", "f1")
@@ -293,7 +362,7 @@ class Game:
                 self.board["f8"].has_moved = True
         elif move == "O-O-O":
             if not can_castle[self.active_player]['queenside']:
-                raise self.MoveException(self, f"{self.active_player.value} cannot castle Queenside.")
+                raise self.MoveException(f"{self.active_player.value} cannot castle Queenside.", self)
             if self.active_player == Color.WHITE:
                 self._force_move("e1", "c1")
                 self._force_move("a1", "e1")
@@ -334,12 +403,10 @@ class Game:
         self.board[start] = None
         self.board[end] = piece
 
-    def handle_enpassant_possibility(self, parsed_move, start_square, end_square):
-        capture_rank = '6' if self.active_player == Color.WHITE else '3'
-        square_to_capture = f'{end_square[0]}{capture_rank}'
-        possibles = self.who_can_capture(end_square, 'Pawn', start_square[0] if start_square else None, self.active_player.value)
+    def handle_enpassant_possibility(self, parsed_move):
+        possibles = self.who_can_capture(parsed_move["end_square"], 'Pawn', parsed_move["start_square"][0] if parsed_move["start_square"] else None, self.active_player.value)
         if len(possibles) != 1:
-            raise self.MoveException(self, "En passant capture ambiguity.")
+            raise self.MoveException(f"En passant capture ambiguity for move {parsed_move['move']} found {len(possibles)} possiblities {possibles}.", self)
         return possibles
 
     def find_king_location(self, player_color):
@@ -350,15 +417,20 @@ class Game:
             raise ValueError("Location cannot be None")
         pieces = []
         target = self.board[location]
-        if target is not None:
+        if target is None:
+            color_filter = self.antiplayer
+        else:
             color_filter = target.anticolor()
-        for piece in self.pieces[color_filter]:
-            if piece_filter is not None and piece.__class__.__name__ != piece_filter:
-                continue
-            if file_filter is not None and piece.location[0] not in file_filter:
-                continue
-            if piece.can_take(location, self):
-                pieces.append(piece)
+        try:
+            for piece in self.pieces[color_filter]:
+                if piece_filter is not None and piece.__class__.__name__ != piece_filter:
+                    continue
+                if file_filter is not None and piece.location[0] not in file_filter:
+                    continue
+                if piece.can_take(location, self):
+                    pieces.append(piece)
+        except KeyError:
+            print(1)
         return deepcopy(pieces)
 
     def is_king_in_check(self, player):

@@ -13,13 +13,13 @@ class Location:
     @staticmethod
     def _valid_locations(location):
         if len(location) != 2 or not isinstance(location, str):
-            raise Location.LocationException('Location must be string of length 2')
+            raise Location.LocationException(f'Location must be a string of length 2, not {location}')
         return location[0] in "abcdefgh" and location[1] in "12345678"
 
     def __init__(self, location: str):
         self.location = str(location).lower()
         if not Location._valid_locations(self.location):
-            raise Location.LocationException(f"Invalid location: {location}")
+            raise Location.LocationException(f"Invalid location: {self.location}")
         self.file = self.location[0]  # A-H
         self.int_file = ord(self.file)
         self.rank = int(self.location[1])  # 1-8

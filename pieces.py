@@ -28,9 +28,13 @@ class Piece:
         return f'{self.color.value} {self.__class__.__name__}'
 
     def __eq__(self, other):
+        if not isinstance(other, Piece):
+            raise TypeError("other must be an instance of Piece")
         return self.color == other.color and self.location == other.location
 
     def __ne__(self, other):
+        if not isinstance(other, Piece):
+            raise TypeError("other must be an instance of Piece")
         return self.color != other.color or self.location != other.location
 
     @property
@@ -60,10 +64,10 @@ class Piece:
         raise NotImplementedError
 
     def can_take(self, location: str | Location, game) -> bool:
-        result = self.can_move_to(location, game)
-
-        # and board[location] is not None and board[location].color == self.anticolor())
-        return result
+        if game.board[location] is not None:
+            if game.board[location].color == self.color:
+                return False
+        return self.can_move_to(location, game)
 
     def get_all_possible_moves(self, board) -> list[Location]:
         possible_moves = []
@@ -111,6 +115,7 @@ class Pawn(Piece):
                 return f"{chr(ord(h) - 1)}{v + 1}", f"{chr(ord(h) + 1)}{v + 1}"
 
     def move_effects(self, start: Location | str, end: Location, game):
+        game.logger.debug(f"Running move_effects for {game.board[end].string()} at {end}")
         if isinstance(start, str):
             start = Location(start)
         if isinstance(end, str):
@@ -135,11 +140,10 @@ class Pawn(Piece):
         move_distance = location - self.location
         if move_distance[0] != 0:
             return False
-        try:
-            if not game.board.is_move_clear(self.location, location):
-                return False
-        except AttributeError as e:
-            print('')
+
+        if not game.board.is_move_clear(self.location, location):
+            return False
+
         color = 1 if self.color == Color.WHITE else -1
         if move_distance[1] == (1 * color):
             return True
@@ -153,7 +157,7 @@ class Pawn(Piece):
         move_distance = self.location - location
         if move_distance[0] in (1, -1) and ((move_distance[1] == -1 and self.color == Color.WHITE) or (move_distance[1] == 1 and self.color == Color.BLACK)):
             return True
-        if game.enpassants is not None and location in game.enpassants and game.board[location].__class__.__name__ == "Pawn":
+        if game.enpassants is not None and str(location) in game.enpassants and game.board[location].__class__.__name__ == "Pawn":
             return True
         return False
 
@@ -299,6 +303,5 @@ class King(Piece):
 
         for piece in game.pieces[self.anticolor()]:
             if piece.can_take(location, game):
-                print(f"{piece} can take {location}")
                 return False
         return True

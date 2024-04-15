@@ -17,12 +17,10 @@ class PgnLoader:
             return f"{super().__str__()}\n{self.board.create_board_text(highlights=self.highlights)}"
 
     def __init__(self):
-        self.game = Game()
+        self.game = Game(loglevel="INFO")
         self.data = None
         self.tags = dict()
         self.moves = None
-        self.game.reset()
-        self.game.setup_board()
         self.original = None
 
     def __getattr__(self, name):
@@ -36,7 +34,6 @@ class PgnLoader:
         self.data = None
         self.tags = dict()
         self.moves = None
-        self.game.reset()
         self.game.setup_board()
 
     def load_file(self, filename):
@@ -75,7 +72,7 @@ class PgnLoader:
         played_moves = []
         for move in self.moves:
             try:
-                self.game.compact_move(move)
+                self.game.make_compact_move(move)
             except (PgnLoader.PgnLoaderException, Board.MoveException, pieces.Piece.MoveException) as e:
                 state = e
                 break

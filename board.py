@@ -9,7 +9,13 @@ from rich.text import Text
 from pieces import Piece
 from utils import Color, Location
 
+class SuppressLoggingFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.suppress = False
 
+    def filter(self, record):
+        return not self.suppress
 class Board:
     class MoveException(Exception):
         def __init__(self, board: 'Board', message: str, highlights: list[str] | str | None = None, *args):
@@ -38,8 +44,12 @@ class Board:
             self.original_turn_number = None
             self.original_halfmove_counter = None
             self.enpassants = None
+            self.filter = SuppressLoggingFilter()
+            self.game.logger.addFilter(self.filter)
 
         def __enter__(self):
+            # Surpress logging for anything that happens during the temporary move.
+            self.filter.suppress = True
             self.temp_board = deepcopy(self.board)
             self.original_pieces = deepcopy(self.game.pieces)
             self.original_moves = deepcopy(self.game.moves)
@@ -51,6 +61,8 @@ class Board:
             return self.board
 
         def __exit__(self, exc_type, exc_val, exc_tb):
+            # Allow logging again
+            self.filter.suppress = False
             self.board.squares.clear()
             self.board.squares.update(self.temp_board.squares)
             self.game.pieces.clear()
@@ -65,7 +77,7 @@ class Board:
 
     _precomputed_square_names = [f'{letter}{number}' for letter in 'abcdefgh' for number in range(1, 9)]
 
-    def __init__(self, loglevel="ERROR", console=None):
+    def __init__(self, console=None):
         """
         Initialize the chess board. Set up required variables and clear the board.
         """
@@ -76,9 +88,7 @@ class Board:
         self.black_piece_color = 'blue'
         self.white_piece_color = 'green'
         self.highlight_color = 'red'
-        logging.basicConfig(level=loglevel, format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True, console=self.console, markup=True, show_path=False)])
         self.logger = logging.getLogger("rich")
-        self.logger.setLevel(loglevel)
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -131,22 +141,6 @@ class Board:
         if self[location] is not None:
             raise self.MoveException(self, f"Cannot add {piece} to {location}, already occupied by {self.squares[location]}")
         self[location] = piece
-
-    def move(self, start: Location, end: Location | None, force=False):
-        if self[start] is None:
-            raise Board.MoveException(self, f"No piece at {start}")
-        if self[end] is None:
-            # No capture
-            if not self[start].can_move_to(end, self):
-                raise Board.MoveException(self, f"{self[start].__class__.__name__.capitalize()} at {start} can't move to {end}")
-            captured_piece = None
-        else:
-            if not self[start].can_take(end, self):
-                raise Board.MoveException(self, f"{self[start].__class__.__name__.capitalize()} at {start} cannot take {self[end].__class__.__name__.capitalize()} at {self[end]}")
-            captured_piece = self[end]
-            captured_piece.location = None
-        self[end], self[start] = self[start], None
-        return captured_piece
 
     def iter_square_names(self) -> Iterator[str]:
         """
@@ -256,7 +250,7 @@ class Board:
             highlights = [highlights]
 
         # Add file labels at the top
-        board_text = Text("a b c d e f g h\n", style="bold white")
+        board_text = Text("  a b c d e f g h\n", style="bold white")
 
         for number in range(8, 0, -1):
             # Add rank label at the start of each line
@@ -287,6 +281,6 @@ class Board:
             board_text.append(f" {number}\n", style="bold")
 
         # Add file labels at the bottom
-        board_text.append("a b c d e f g h", style="bold")
+        board_text.append("  a b c d e f g h", style="bold")
 
         return board_text
