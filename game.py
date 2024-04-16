@@ -18,14 +18,15 @@ class Game:
             if game is not None:
                 self.game = game
                 self.game.console.print(self.message)
-                self.game.console.print(self.game.board.create_board_text())
+                #  self.game.console.print(self.game.board.create_board_text())
 
     def __init__(self, loglevel='DEBUG'):
         self.console = Console()
+
         self.add_logging_level('TRACE', logging.DEBUG - 5)
         self.loglevel = loglevel.upper()
         logging.basicConfig(level=loglevel, format="%(message)s", datefmt="[%X]", handlers=[RichHandler(rich_tracebacks=True, console=self.console, markup=True, show_path=False)])
-        self.logger = logging.getLogger("rich")
+        self.logger = logging.getLogger("__name__")
         self.logger.setLevel(self.loglevel)
         self.board = Board(console=self.console)
         self.pieces = {Color.WHITE: [], Color.BLACK: []}
@@ -140,6 +141,22 @@ class Game:
                     self.add_piece(piece=King(color, location=square))
         self.logger.trace(f"Finished setting up initial piece positions.")
 
+    def _remove_piece(self, piece):
+        # Not CAPTURE, but literally remove.
+        # Should never be used outside of testing.
+        self.board[piece.location] = None
+        for p in self.pieces[piece.color]:
+            if p.location == piece.location:
+                self.pieces[piece.color].remove(p)
+
+    def _remove_piece_at_square(self, square):
+        piece = self.board[square]
+        if piece is not None:
+            self._remove_piece(piece)
+        else:
+            raise ValueError(f"No piece found at square {square}")
+        return piece
+
     def add_piece(self, piece):
         self.pieces[piece.color].append(piece)
         self.board.add_piece(piece=piece)
@@ -159,8 +176,8 @@ class Game:
         for x in self.pieces[self.active_player]:
             if x.location == start:
                 piece_piece = x
-        if piece_piece is None:
-            raise Game.MoveException('This should never happen!!!', self)
+        # if piece_piece is None:
+        #     raise Game.MoveException('This should never happen!!!', self)
         # Ensure there is a piece at the start location
         if self.board[start] is None:
             raise Game.MoveException(f"No piece at {start}", self)
@@ -175,7 +192,7 @@ class Game:
                 if not self.board[start].can_take(end, self):
                     raise Game.MoveException(f"{self.board[start].string()} at {start} cannot capture {self.board[end].string()} at {end}", self)
                 captured_piece = self.board[end]
-                captured_piece.location = None  # Remove captured piece from the board
+                # captured_piece.location = None  # Remove captured piece from the board
                 self.enpassants = None
             else:
                 # Handle non-capture move
@@ -193,6 +210,7 @@ class Game:
             for piece in self.pieces[captured_piece.color]:
                 if piece == captured_piece:
                     self.pieces[captured_piece.color].remove(piece)
+            captured_piece.location = None
         if piece_piece is None:
             raise Game.MoveException("Piece Piece is none.", self)
         piece_piece.location = end
@@ -207,7 +225,8 @@ class Game:
         self.board[end].move_effects(start=start, end=end, game=self)
 
     def make_compact_move(self, move: str):
-        self.logger.debug(f"Beginning expansion of compact move '{move}' for {self.active_player.value.capitalize()}")
+        self.logger.debug(f"=== Starting Turn {self.turn_number}-{self.active_player.value.capitalize()} ===")
+        self.logger.debug(f"Expanding {self.active_player.value.capitalize()}'s compact move '{move}'")
         parsed_move = self.parse_move(move)
         if move in ("O-O", "O-O-O"):
             self.logger.trace(f"{self.active_player.value.capitalize()} is castling {'kingside' if move == 'O-O' else 'queenside'}")
@@ -248,14 +267,15 @@ class Game:
 
         parsed_move = self.determine_start_and_end_squares(parsed_move)
         possibles = self.find_possible_moves(parsed_move)
-        self.logger.debug(f"Found {len(possibles)} possible pieces for {self.active_player.value.capitalize()}'s move of ? to {parsed_move['end_square']}: {possibles}")
+        self.logger.debug(f"Found {len(possibles)} possible pieces for {self.active_player.value.capitalize()}'s move of {parsed_move['start_square'] if parsed_move['start_square'] is not None else ''}? to {parsed_move['end_square']}: {possibles}")
         if not possibles:
             raise Game.MoveException(f"None of {self.active_player.value.capitalize()}'s {'piece' if parsed_move['start_type'] is None else parsed_move['start_type']}s can move to {parsed_move['end_square']}", self)
         possibles_after_self_check = []
         for p in possibles:
-            causes_check = self.does_move_cause_self_check(p.location, parsed_move['end_square'])
+            causes_check = self.does_move_cause_self_check(start=p.location, end=parsed_move['end_square'])
             if causes_check:
-                self.logger.debug(f"Move {parsed_move['move']} would put yourself into check - eliminating move from consideration.")
+                self.logger.info(f"{self.active_player.value.capitalize()}'s move {parsed_move['move']} would put {self.active_player.value.capitalize()} into check from {causes_check} - eliminating possible move.")
+                self.board.print()
             else:
                 possibles_after_self_check.append(p)
 
@@ -281,11 +301,15 @@ class Game:
             return self.handle_enpassant_possibility(parsed_move)
         elif self.board[parsed_move['end_square']] is None:
             raise self.MoveException(f"Illegal capture: no piece at {parsed_move['end_square']} for {self.active_player.value.capitalize()}'s move {parsed_move['move']}.", self)
-        return self.who_can_capture(parsed_move['end_square'], parsed_move['start_type'].__qualname__, parsed_move['start_square'][0] if parsed_move['start_square'] else None, self.antiplayer)
+
+        who_can = self.who_can_capture(parsed_move['end_square'], parsed_move['start_type'].__qualname__, parsed_move['start_square'][0] if parsed_move['start_square'] else None, self.active_player)
+        return who_can
 
     def does_move_cause_self_check(self, start, end):
         with self.board.TempMove(self):
+            active_player = self.active_player
             self.move(start, end)
+            self.active_player = active_player
             is_check = self.is_king_in_check(self.active_player)
             return is_check
 
@@ -313,7 +337,6 @@ class Game:
         self.pieces[piece.color].append(new_piece)
         self.board[location] = new_piece
 
-
     def handle_enpassant(self, start, end) -> Piece:
         capture_rank = '5' if self.active_player == Color.WHITE else '4'
         square_to_capture = f'{end[0]}{capture_rank}'
@@ -334,61 +357,48 @@ class Game:
         self.logger.trace(f"Checking if any of {self.active_player.value.capitalize()}'s {'piece' if piece_filter is None else piece_filter}s can move to {location}")
 
         for piece in self.pieces[color_filter]:
-            logging_string = None
-            if piece_filter is None or piece.__class__.__name__ == piece_filter:
-                logging_string = f"{piece.string()}@{piece.location} matches color filter '{color_filter.value.capitalize()}'"
-                if file_filter is None or piece.location[0] == file_filter:
-                    logging_string += f", matches file filter of '{file_filter if file_filter is not None else piece.location[0]}'"
-                    if piece.can_move_to(location, self):
-                        logging_string += f" and can move to {location} - added to list of possibles."
-                        self.logger.trace(logging_string)
-                        pieces.append(piece)
+            if piece_filter is not None and piece.__class__.__name__ != piece_filter:
+                continue
+            if file_filter is not None and piece.location[0] != file_filter:
+                continue
+
+            if piece.can_move_to(location, self):
+                logging_string = f"{piece.string()}@{piece.location} matches color filter '{color_filter.value.capitalize()}', matches file filter '{file_filter if file_filter is not None else piece.location[0]}' and can move to {location} - added to list of possibles."
+                self.logger.trace(logging_string)
+                pieces.append(piece)
         return deepcopy(pieces)
 
     def castle(self, move: str):
         can_castle = self.can_castle()
+        rank = 1 if self.active_player == Color.WHITE else 8
         if move == "O-O":
             if not can_castle[self.active_player]['kingside']:
-                raise self.MoveException(f"{self.active_player.value()} cannot castle Kingside.", self)
-            if self.active_player == Color.WHITE:
-                self._force_move("e1", "g1")
-                self._force_move("h1", "f1")
-                self.board["g1"].has_moved = True
-                self.board["f1"].has_moved = True
-            else:
-                self._force_move("e8", "g8")
-                self._force_move("h8", "f8")
-                self.board["g8"].has_moved = True
-                self.board["f8"].has_moved = True
+                raise self.MoveException(f"{self.active_player.value.capitalize()} cannot castle Kingside.", self)
+            self._force_move(f"e{rank}", f"g{rank}")
+            self._force_move(f"h{rank}", f"f{rank}")
+            self.board[f"g{rank}"].has_moved = True
+            self.board[f"f{rank}"].has_moved = True
         elif move == "O-O-O":
             if not can_castle[self.active_player]['queenside']:
-                raise self.MoveException(f"{self.active_player.value} cannot castle Queenside.", self)
-            if self.active_player == Color.WHITE:
-                self._force_move("e1", "c1")
-                self._force_move("a1", "e1")
-                self.board["c1"].has_moved = True
-                self.board["e1"].has_moved = True
-            else:
-                self._force_move("e8", "c8")
-                self._force_move("a8", "d8")
-                self.board["c8"].has_moved = True
-                self.board["d8"].has_moved = True
+                raise self.MoveException(f"{self.active_player.value.capitalize()} cannot castle Queenside.", self)
+            self._force_move(f"e{rank}", f"c{rank}")
+            self._force_move(f"a{rank}", f"d{rank}")
+            self.board[f"c{rank}"].has_moved = True
+            self.board[f"d{rank}"].has_moved = True
 
     def can_castle(self) -> dict:
         retval = {Color.WHITE: {'queenside': False, 'kingside': False}, Color.BLACK: {'queenside': False, 'kingside': False}}
         if self.board['e1'] is not None and not self.board['e1'].has_moved and not self.who_can_capture('e1', color_filter=Color.BLACK):
             retval[Color.WHITE]['queenside'] = (self.board['a1'] is not None and not self.board['a1'].has_moved
                                                 and self.board['d1'] is None and not self.who_can_capture('d1', color_filter=Color.BLACK)
-                                                and self.board['c1'] is None and not self.who_can_capture('c1', color_filter=Color.BLACK)
-                                                and self.board['b1'] is None and not self.who_can_capture('b1', color_filter=Color.BLACK))
+                                                and self.board['c1'] is None and not self.who_can_capture('c1', color_filter=Color.BLACK))
             retval[Color.WHITE]['kingside'] = (self.board['h1'] is not None and not self.board['h1'].has_moved
                                                and self.board['f1'] is None and not self.who_can_capture('f1', color_filter=Color.BLACK)
                                                and self.board['g1'] is None and not self.who_can_capture('g1', color_filter=Color.BLACK))
         if self.board['e8'] is not None and not self.board['e8'].has_moved and not self.who_can_capture('e8', color_filter=Color.WHITE):
             retval[Color.BLACK]['queenside'] = (self.board['a8'] is not None and not self.board['a8'].has_moved
                                                 and self.board['d8'] is None and not self.who_can_capture('d8', color_filter=Color.WHITE)
-                                                and self.board['c8'] is None and not self.who_can_capture('c8', color_filter=Color.WHITE)
-                                                and self.board['b8'] is None and not self.who_can_capture('b8', color_filter=Color.WHITE))
+                                                and self.board['c8'] is None and not self.who_can_capture('c8', color_filter=Color.WHITE))
             retval[Color.BLACK]['kingside'] = (self.board['h8'] is not None and not self.board['h8'].has_moved
                                                and self.board['f8'] is None and not self.who_can_capture('f8', color_filter=Color.WHITE)
                                                and self.board['g8'] is None and not self.who_can_capture('g8', color_filter=Color.WHITE))
@@ -399,6 +409,11 @@ class Game:
             start = str(start.location)
         if isinstance(end, Location):
             end = str(end.location)
+        piece_piece = None
+        for x in self.pieces[self.active_player]:
+            if x.location == start:
+                piece_piece = x
+        piece_piece.location = end
         piece = self.board[start]
         self.board[start] = None
         self.board[end] = piece
@@ -417,28 +432,26 @@ class Game:
             raise ValueError("Location cannot be None")
         pieces = []
         target = self.board[location]
-        if target is None:
-            color_filter = self.antiplayer
-        else:
-            color_filter = target.anticolor()
-        try:
-            for piece in self.pieces[color_filter]:
-                if piece_filter is not None and piece.__class__.__name__ != piece_filter:
-                    continue
-                if file_filter is not None and piece.location[0] not in file_filter:
-                    continue
-                if piece.can_take(location, self):
-                    pieces.append(piece)
-        except KeyError:
-            print(1)
+        if color_filter is None:
+            if target is None:
+                color_filter = self.antiplayer
+            else:
+                color_filter = target.anticolor()
+        for piece in self.pieces[color_filter]:
+            if piece_filter is not None and piece.__class__.__name__ != piece_filter:
+                continue
+            if file_filter is not None and piece.location[0] not in file_filter:
+                continue
+            if piece.can_take(location, self):
+                pieces.append(piece)
         return deepcopy(pieces)
 
     def is_king_in_check(self, player):
         king = self.get_king(player)
-        attackers = self.who_can_capture(king.location)
+        attackers = self.who_can_capture(king.location, color_filter=self.antiplayer)
         if attackers:
-            self.logger.info(f"King's attackers found: {attackers}")
-            return True
+            # self.logger.info(f"King's attackers found: {attackers}")
+            return attackers
         return False
 
     def check_for_checkmate(self):

@@ -16,8 +16,9 @@ class PgnLoader:
         def __str__(self):
             return f"{super().__str__()}\n{self.board.create_board_text(highlights=self.highlights)}"
 
-    def __init__(self):
-        self.game = Game(loglevel="INFO")
+    def __init__(self, loglevel="INFO"):
+        self.loglevel = loglevel.upper()
+        self.game = Game(loglevel=self.loglevel)
         self.data = None
         self.tags = dict()
         self.moves = None
@@ -88,6 +89,6 @@ class PgnLoader:
 
 
 if __name__ == '__main__':
-    loader = PgnLoader()
+    loader = PgnLoader(loglevel="TRACE")
     loader.load_file('pgn_files/single_game.pgn')
     loader.play_game()

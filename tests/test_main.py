@@ -74,24 +74,93 @@ class TestChessGame:
         assert test_game.board['d5'] is None
         assert isinstance(test_game.captured_pieces[Color.BLACK][-1], Pawn)
 
-    def test_castling(self, test_game):
+    def test_castling_success(self, test_game):
         # Clear the path for castling
-        test_game.board['f1'] = None
-        test_game.board['g1'] = None
-        # Perform kingside castling
+        test_game._remove_piece_at_square('f1')
+        test_game._remove_piece_at_square('g1')
+        test_game._remove_piece_at_square('f8')
+        test_game._remove_piece_at_square('g8')
+        # Test kingside castling
         test_game.active_player = Color.WHITE
         test_game.move('O-O', None)
         assert isinstance(test_game.board['g1'], King)
         assert isinstance(test_game.board['f1'], Rook)
+        test_game.active_player = Color.BLACK
+        test_game.move('O-O', None)
+        assert isinstance(test_game.board['g8'], King)
+        assert isinstance(test_game.board['f8'], Rook)
         test_game.setup_board()
         # Perform queenside castling
-        test_game.board['d1'] = None
-        test_game.board['c1'] = None
-        test_game.board['b1'] = None
+        test_game._remove_piece_at_square('d1')
+        test_game._remove_piece_at_square('c1')
+        test_game._remove_piece_at_square('b1')
+        test_game._remove_piece_at_square('d8')
+        test_game._remove_piece_at_square('c8')
+        test_game._remove_piece_at_square('b8')
         test_game.active_player = Color.WHITE
         test_game.move('O-O-O', None)
         assert isinstance(test_game.board['c1'], King)
-        assert isinstance(test_game.board['e1'], Rook)
+        assert isinstance(test_game.board['d1'], Rook)
+        test_game.active_player = Color.BLACK
+        test_game.move('O-O-O', None)
+        assert isinstance(test_game.board['c8'], King)
+        assert isinstance(test_game.board['d8'], Rook)
+
+    def test_castling_failure(self, test_game):
+        # Clear the path for castling
+        test_game._remove_piece_at_square('g1')
+        test_game._remove_piece_at_square('g8')
+        # Test kingside castling
+        test_game.active_player = Color.WHITE
+        with pytest.raises(Game.MoveException):
+            test_game.move('O-O', None)
+
+            test_game.active_player = Color.BLACK
+        with pytest.raises(Game.MoveException):
+            test_game.move('O-O', None)
+
+        test_game.setup_board()
+        # Perform queenside castling
+        test_game._remove_piece_at_square('d1')
+        test_game._remove_piece_at_square('b1')
+        test_game._remove_piece_at_square('d8')
+        test_game._remove_piece_at_square('b8')
+
+        test_game.active_player = Color.WHITE
+        with pytest.raises(Game.MoveException):
+            test_game.move('O-O-O', None)
+        test_game.active_player = Color.BLACK
+        with pytest.raises(Game.MoveException):
+            test_game.move('O-O-O', None)
+
+    def test_castling_failure_due_to_check(self, test_game):
+        # Now check that we can't castle when one square is in check
+        test_game.reset()
+        test_game.add_piece(Rook(Color.BLACK, "a8"))
+        test_game.add_piece(King(Color.BLACK, "e8"))
+        test_game.add_piece(Rook(Color.BLACK, "h8"))
+        test_game.add_piece(Queen(Color.WHITE, "b5"))
+        test_game.add_piece(King(Color.WHITE, "e1"))
+
+        test_game.active_player = Color.BLACK
+        with pytest.raises(Game.MoveException):
+            test_game.move('O-O-O', None)
+        with pytest.raises(Game.MoveException):
+            test_game.move('O-O', None)
+
+        # Now check that we can't castle when one intermediate square is in check
+        test_game.reset()
+        test_game.add_piece(Rook(Color.BLACK, "a8"))
+        test_game.add_piece(King(Color.BLACK, "e8"))
+        test_game.add_piece(Rook(Color.BLACK, "h8"))
+        test_game.add_piece(Queen(Color.WHITE, "f4"))
+        test_game.add_piece(King(Color.WHITE, "e1"))
+
+        test_game.active_player = Color.BLACK
+        # Confirm that Castling kingside is verboten, but Queenside is possible
+        with pytest.raises(Game.MoveException):
+            test_game.move('O-O', None)
+        test_game.move('O-O-O', None)
 
     def test_checkmate_detection(self, test_game):
         # Setup a simple checkmate position
@@ -234,10 +303,10 @@ class TestChessGame:
     def test_bishop_movement(self, test_game):
         test_game.reset()
         test_game.add_piece(Bishop(Color.WHITE, "c1"))
-        bishop = test_game.board['c1']
-        test_game.move('c1', 'a3')
-        assert bishop.location == "a3" and test_game.board["a3"] is bishop
-        # Add additional assertions for invalid moves and black bishop
+        try_movements('c1', ["a3", "f8", "h6", "c1", "b2", "g7", "e5"], test_game)
+        test_game.reset()
+        test_game.add_piece(Bishop(Color.BLACK, "c8"))
+        try_movements('c8', ["a6", "f1", "g2", "c6"], test_game)
 
     # Test Rook Movements
     def test_rook_movement(self, test_game):
