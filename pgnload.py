@@ -61,7 +61,7 @@ class PgnLoader:
         only_moves = '\n'.join([x for x in self.data.split('\n') if not x.startswith('[')])
 
         pgn_no_comments = re.sub(r'\{.*?\}', '', only_moves)
-        moves = re.findall(r'(?:[NBRQK]?[a-h]?\d?\+?x?[a-h]\d\+?|O-O(?:-O)?)[+#]?', pgn_no_comments)
+        moves = re.findall(r'(?:[NBRQK]?[a-h]?x?[a-h]\d(?:=[QRBN])?\+?|O-O(?:-O)?)[+#]?', pgn_no_comments)
         self.moves = moves
 
     def iter_moves(self):
@@ -89,6 +89,6 @@ class PgnLoader:
 
 
 if __name__ == '__main__':
-    loader = PgnLoader(loglevel="TRACE")
+    loader = PgnLoader(loglevel="ERROR")
     loader.load_file('pgn_files/single_game.pgn')
     loader.play_game()

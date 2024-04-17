@@ -302,6 +302,8 @@ class King(Piece):
             raise ValueError("Location cannot be None")
 
         for piece in game.pieces[self.anticolor()]:
+            if piece.__class__.__name__ == "King":
+                continue
             if piece.can_take(location, game):
                 return False
         return True

@@ -31,7 +31,7 @@ def read_games(file_path):
                     game.append(line.strip())
 
 
-def run_games(filename, stop_on_fail=False, detail=False):
+def run_games(filename, stop_on_fail=False, loglevel="INFO"):
     table = Table(title=filename, show_lines=True)
 
     table.add_column("Game Name", justify="center", style="cyan", no_wrap=True)
@@ -40,18 +40,22 @@ def run_games(filename, stop_on_fail=False, detail=False):
     num_fail = 0
     failed_games = []
     for game in read_games(filename):
-        pgnloader = PgnLoader()
+        pgnloader = PgnLoader(loglevel=loglevel)
         pgnloader.load_str(game)
-        result = pgnloader.play_game()
-        if result[0] in (None, 'draw', 'end'):
+        try:
+            result = pgnloader.play_game()
+        except Exception as e:
+            result = None
+        if result is not None and result[0] in (None, 'draw', 'end'):
             table.add_row(pgnloader.vs_str, "[bold green]PASS[/bold green]")
             num_pass += 1
         else:
             cell_text = Text("FAIL\n", style="bold red")
-            cell_text.append_text(Text(f"Turn #{result[0].args[0].turn_number}\n", style='yellow'))
-            cell_text.append_text(Text(result[0].args[1], style='cyan'))
-            cell_text.append_text(Text("\n", style='bright white'))
-            cell_text.append_text(result[0].args[0].create_board_text())
+            if result is not None:
+                cell_text.append_text(Text(f"Turn #{result[0].args[0].turn_number}\n", style='yellow'))
+                cell_text.append_text(Text(result[0].args[1], style='cyan'))
+                cell_text.append_text(Text("\n", style='bright white'))
+                cell_text.append_text(result[0].args[0].create_board_text())
             cell_text.append_text(Text(f"\n{pgnloader.tags['site']}", style='bright white'))
             table.add_row(pgnloader.vs_str, cell_text)
             num_fail += 1
@@ -69,4 +73,4 @@ def run_games(filename, stop_on_fail=False, detail=False):
             outfile.write(game + '\n')
 
 
-run_games("pgn_files/lichess_2013-01-example.pgn")
+run_games("pgn_files/lichess_2013-01-example.pgn", loglevel="ERROR")

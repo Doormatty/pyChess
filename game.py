@@ -18,7 +18,7 @@ class Game:
             if game is not None:
                 self.game = game
                 self.game.console.print(self.message)
-                #  self.game.console.print(self.game.board.create_board_text())
+                self.game.console.print(self.game.board.create_board_text())
 
     def __init__(self, loglevel='DEBUG'):
         self.console = Console()
@@ -31,7 +31,7 @@ class Game:
         self.board = Board(console=self.console)
         self.pieces = {Color.WHITE: [], Color.BLACK: []}
         self.captured_pieces = {Color.WHITE: [], Color.BLACK: []}
-        self.turn_number = 0
+        self.turn_number = 1
         self.moves = []
         self.halfmove_counter = 0
         self.enpassants = None
@@ -101,7 +101,7 @@ class Game:
         self.board.clear()
         self.pieces = {Color.WHITE: [], Color.BLACK: []}
         self.captured_pieces = {Color.WHITE: [], Color.BLACK: []}
-        self.turn_number = 0
+        self.turn_number = 1
         self.moves = []
         self.halfmove_counter = 0
         self.enpassants = []
@@ -192,6 +192,7 @@ class Game:
                 if not self.board[start].can_take(end, self):
                     raise Game.MoveException(f"{self.board[start].string()} at {start} cannot capture {self.board[end].string()} at {end}", self)
                 captured_piece = self.board[end]
+                self.logger.info(f"{self.board[start]} captures {self.board[end]}")
                 # captured_piece.location = None  # Remove captured piece from the board
                 self.enpassants = None
             else:
@@ -240,6 +241,10 @@ class Game:
             parsed_move['end_square'] = expanded_move[1]
             try:
                 self.move(start=expanded_move[0], end=expanded_move[1])
+                if parsed_move['promotion']:
+
+                    self.promote_pawn(expanded_move[1], parsed_move['promotion'])
+                    print("1")
             except self.MoveException as e:
                 self.logger.error(e)
                 raise e
@@ -254,7 +259,7 @@ class Game:
                 'end_type': type_dict[parts['end_type']] if parts['end_type'] is not None else None,
                 'start_square': parts['start_square'],
                 'end_square': parts['end_square'],
-                'promotion': parts['promotion'] if parts['promotion'] else False,
+                'promotion': type_dict[parts['promotion']] if parts['promotion'] else False,
                 'capture': True if parts['capture'] else False,
                 'check': True if parts['check'] else False,
                 'checkmate': True if parts['checkmate'] else False,
@@ -274,8 +279,7 @@ class Game:
         for p in possibles:
             causes_check = self.does_move_cause_self_check(start=p.location, end=parsed_move['end_square'])
             if causes_check:
-                self.logger.info(f"{self.active_player.value.capitalize()}'s move {parsed_move['move']} would put {self.active_player.value.capitalize()} into check from {causes_check} - eliminating possible move.")
-                self.board.print()
+                self.logger.debug(f"{self.active_player.value.capitalize()}'s move {parsed_move['move']} would put {self.active_player.value.capitalize()} into check from {causes_check} - eliminating possible move.")
             else:
                 possibles_after_self_check.append(p)
 
@@ -324,7 +328,7 @@ class Game:
         if self.active_player == Color.WHITE:
             self.turn_number += 1
 
-    def promote_pawn(self, location, new_type):
+    def promote_pawn(self, location: str, new_type):
         piece = self.board[location]
         if piece is None or not isinstance(piece, Pawn):
             raise self.MoveException(f"{self.active_player.value.capitalize()} you cannot promote piece at {location}, it is not a pawn", self)
@@ -332,10 +336,11 @@ class Game:
             raise self.MoveException(f"{self.active_player.value.capitalize()} you can only promote pawns in the end row", self)
         self.board[location] = None
         self.pieces[piece.color].remove(piece)
-        new_piece = globals()[new_type](piece.color, location)
+        new_piece = new_type(piece.color, location)
         self.add_piece(new_piece)
-        self.pieces[piece.color].append(new_piece)
-        self.board[location] = new_piece
+        # self.pieces[piece.color].append(new_piece)
+        # self.board[location] = new_piece
+        print(1)
 
     def handle_enpassant(self, start, end) -> Piece:
         capture_rank = '5' if self.active_player == Color.WHITE else '4'
@@ -446,11 +451,20 @@ class Game:
                 pieces.append(piece)
         return deepcopy(pieces)
 
+    def get_capture_map(self):
+        capture_map = {}
+        for square in self.board.iter_square_names():
+            possible_captures = self.who_can_capture(square)
+            if possible_captures:
+                capture_map[square] = possible_captures
+        return capture_map
+
     def is_king_in_check(self, player):
         king = self.get_king(player)
         attackers = self.who_can_capture(king.location, color_filter=self.antiplayer)
         if attackers:
             # self.logger.info(f"King's attackers found: {attackers}")
+            x = self.get_king(player)
             return attackers
         return False
 
