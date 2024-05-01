@@ -16,13 +16,15 @@ class PgnLoader:
         def __str__(self):
             return f"{super().__str__()}\n{self.board.create_board_text(highlights=self.highlights)}"
 
-    def __init__(self, loglevel="INFO"):
+    def __init__(self, loglevel="INFO", game_string=None):
         self.loglevel = loglevel.upper()
         self.game = Game(loglevel=self.loglevel)
         self.data = None
         self.tags = dict()
         self.moves = None
         self.original = None
+        if game_string is not None:
+            self.load_str(game_string)
 
     def __getattr__(self, name):
         return self.tags.get(name.lower(), None)

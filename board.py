@@ -3,11 +3,11 @@ from collections.abc import Iterator
 from copy import deepcopy
 
 from rich.console import Console
-from rich.logging import RichHandler
 from rich.text import Text
 
 from pieces import Piece
 from utils import Color, Location
+
 
 class SuppressLoggingFilter(logging.Filter):
     def __init__(self):
@@ -16,6 +16,8 @@ class SuppressLoggingFilter(logging.Filter):
 
     def filter(self, record):
         return not self.suppress
+
+
 class Board:
     class MoveException(Exception):
         def __init__(self, board: 'Board', message: str, highlights: list[str] | str | None = None, *args):

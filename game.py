@@ -15,10 +15,10 @@ class Game:
         def __init__(self, message: str, game: 'Game' = None) -> None:
             # super().__init__(message)
             self.message = message
-            if game is not None:
-                self.game = game
-                self.game.console.print(self.message)
-                self.game.console.print(self.game.board.create_board_text())
+            # if game is not None:
+            #     self.game = game
+            #     self.game.console.print(self.message)
+            #     self.game.console.print(self.game.board.create_board_text())
 
     def __init__(self, loglevel='DEBUG'):
         self.console = Console()
@@ -244,7 +244,6 @@ class Game:
                 if parsed_move['promotion']:
 
                     self.promote_pawn(expanded_move[1], parsed_move['promotion'])
-                    print("1")
             except self.MoveException as e:
                 self.logger.error(e)
                 raise e
@@ -338,9 +337,6 @@ class Game:
         self.pieces[piece.color].remove(piece)
         new_piece = new_type(piece.color, location)
         self.add_piece(new_piece)
-        # self.pieces[piece.color].append(new_piece)
-        # self.board[location] = new_piece
-        print(1)
 
     def handle_enpassant(self, start, end) -> Piece:
         capture_rank = '5' if self.active_player == Color.WHITE else '4'

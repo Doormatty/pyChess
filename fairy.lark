@@ -1,0 +1,42 @@
+INITIAL_MOVE: "i"
+CAPTURE_ONLY: "c"
+MOVE_ONLY: "o"
+condition: INITIAL_MOVE | CAPTURE_ONLY | MOVE_ONLY
+
+ANY: "n"
+_leaping_distance.1: INT "/" INT
+_range_distance.1: INT "-" INT
+_normal_distance: INT | ANY
+
+move_distance: _normal_distance | _leaping_distance | _range_distance
+
+LEAPER: "~"
+LOCUST: "^"
+move_type: LEAPER | LOCUST
+
+ORTHO_FWD_OR_SIDE.1: ">="
+ORTHO_REV_OR_SIDE.1: "<="
+DIAG_FWD.1: "X>"
+DIAG_REV.1: "X<"
+ORTHO_FWD_AND_REV.1: "<>"
+
+ORTHO_FWD: ">"
+ORTHO_REV: "<"
+ORTHO_SIDE: "="
+ORTHO: "+"
+DIAG: "X"
+ORTHO_OR_DIAG: "*"
+
+_direction: ORTHO_FWD | ORTHO_REV | ORTHO_FWD_AND_REV | ORTHO_SIDE | ORTHO_FWD_OR_SIDE | ORTHO_REV_OR_SIDE | ORTHO | DIAG | DIAG_FWD | DIAG_REV | ORTHO_OR_DIAG
+
+repeated_move.1: move "&" move
+then_move.1: move "." move
+pick_one_move.1: move "," move
+
+_basic_move: [condition+] [move_type] move_distance [_direction+]
+_move_group: [condition+] [move_type] [move_distance] ("(" move+ ")")
+move: _move_group | _basic_move | repeated_move | then_move | pick_one_move
+
+%import common.INT
+%import common.WS
+%ignore WS
